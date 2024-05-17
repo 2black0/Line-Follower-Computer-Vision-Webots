@@ -24,15 +24,15 @@ class EPuckRobot:
         self.max_velocity = 6.28  # Maximum velocity for e-puck motors
         
         # PID control parameters (fine-tuned)
-        self.kp = 0.07  # Proportional gain
+        self.kp = 0.06  # Proportional gain
         self.ki = 0.015  # Integral gain
-        self.kd = 0.025  # Derivative gain
+        self.kd = 0.02  # Derivative gain
         self.integral = 0
         self.previous_error = 0
         
         # PID control parameters (fine-tuned)
         self.kp_speed = 0.05  # Proportional gain
-        self.kd_speed = 0.006  # Derivative gain
+        self.kd_speed = 0.005  # Derivative gain
         self.previous_error_speed = 0
 
     def run(self):
@@ -151,10 +151,10 @@ class EPuckRobot:
         # Base speed for the motors
         base_speed = self.pid_control_speed(error_speed)
 
-        if base_speed < 2.5 and base_speed >= 0:
-            base_speed = 2.5
-        elif base_speed > -2.5 and base_speed < 0:
-            base_speed = -2.5
+        if base_speed < 2.75 and base_speed >= 0:
+            base_speed = 2.75
+        elif base_speed > -2.75 and base_speed < 0:
+            base_speed = -2.75
         else:
             base_speed = base_speed
 
@@ -171,7 +171,7 @@ class EPuckRobot:
         self.right_motor.setVelocity(right_speed)
 
         # Print the steering adjustment and motor speeds with two decimal places, aligning positive and negative values
-        print(f"Base Speed: {base_speed:+.2f}, Steering: {steering_adjustment:+.2f}, Left Speed: {left_speed:+.2f}, Right Speed: {right_speed:+.2f}")
+        #print(f"Base Speed: {base_speed:+.2f}, Steering: {steering_adjustment:+.2f}, Left Speed: {left_speed:+.2f}, Right Speed: {right_speed:+.2f}")
 
     def pid_control(self, error):
         # Calculate integral and derivative terms

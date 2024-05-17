@@ -7,8 +7,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.21308217177663827 -0.9090022277163526 0.3582051619919225 5.322756590739318
-  position -0.2640991163863181 0.22676156827131524 0.36518818629216354
+  orientation -0.34122639006332206 -0.5550423575467923 0.7586122409065466 5.033529108406576
+  position -0.79251200816736 0.8324801732184353 0.9947044408330526
   follow "e-puck"
 }
 TexturedBackground {
@@ -30,7 +30,7 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation -0.0207054 0.142728 -6.3962e-05
+  translation -0.290705 0.142728 -6.3962e-05
   rotation 0.0005805628953582437 -0.00015306997241037814 0.9999998197581378 4.06941e-06
   children [
     HingeJoint {
@@ -1233,8 +1233,8 @@ DEF ROBOT Robot {
       ]
     }
     DEF EPUCK_CAMERA Camera {
-      translation 0.03 0 0.028
-      rotation 0 1 0 0.523599
+      translation 0.032 0 0.028
+      rotation 0 1 0 0.523594
       children [
         Pose {
           rotation 0 0.7071067811865476 0.7071067811865476 3.14159
@@ -1260,7 +1260,7 @@ DEF ROBOT Robot {
           ]
         }
       ]
-      fieldOfView 0.85
+      fieldOfView 1
       width 320
       height 240
       near 0.0055

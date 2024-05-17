@@ -7,7 +7,7 @@ supervisor = Supervisor()
 timestep = int(supervisor.getBasicTimeStep())
 
 # Robot reference
-robot_node = supervisor.getFromDef("ROBOT")  # Replace ROBOT_NAME with the DEF name of your robot
+robot = supervisor.getFromDef("ROBOT")  # Replace ROBOT_NAME with the DEF name of your robot
 
 # Final Waypoints
 waypoints = [
@@ -25,8 +25,8 @@ waypoints = [
 # Logging setup
 lap = 0
 waypoint_index = 0
-initial_position = [-0.29070500000000005, 0.1427280000000019, -6.396199575281827e-05]  # Set initial position here
-at_initial_position = False  # To check if robot is at the initial position
+initial_position = robot.getPosition()  # Save initial position as start line reference
+start_time = supervisor.getTime()
 
 def log_status(lap, current_time, waypoint_index):
     log_message = f"Lap: {lap}, Time: {current_time:.2f}, Waypoint: {waypoint_index}"
@@ -40,7 +40,7 @@ while supervisor.step(timestep) != -1:
     current_time = supervisor.getTime()
     
     # Get robot position
-    position = robot_node.getField("translation").getSFVec3f()
+    position = robot.getPosition()
     
     # Check if robot is at current waypoint (simple proximity check, can be improved)
     if ((position[0] - waypoints[waypoint_index][0])**2 + 
@@ -52,12 +52,10 @@ while supervisor.step(timestep) != -1:
         # Check if all waypoints are reached to complete the lap
         if waypoint_index >= len(waypoints):
             waypoint_index = 0
-            at_initial_position = True  # Enable check for initial position
-
-    # Check if robot is close to the initial position to complete the lap
-    if at_initial_position and ((position[0] - initial_position[0])**2 + 
-                                (position[1] - initial_position[1])**2 + 
-                                (position[2] - initial_position[2])**2) < 0.01:  # Threshold distance for start line
-        lap += 1
-        at_initial_position = False  # Reset the check
-        log_status(lap, current_time, 0)  # Log lap completion and reset waypoint to 0
+            
+            # Check if robot is close to the initial position to complete the lap
+            if ((position[0] - initial_position[0])**2 + 
+                (position[1] - initial_position[1])**2 + 
+                (position[2] - initial_position[2])**2) < 0.01:  # Threshold distance for start line
+                lap += 1
+                start_time = supervisor.getTime()  # Reset lap start time
