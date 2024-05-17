@@ -29,7 +29,7 @@ RectangleArena {
     metalness 0
   }
 }
-Robot {
+DEF ROBOT Robot {
   translation -0.0207054 0.142728 -6.3962e-05
   rotation 0.0005805628953582437 -0.00015306997241037814 0.9999998197581378 4.06941e-06
   children [
@@ -1602,7 +1602,11 @@ Robot {
       0 0 0
     ]
   }
-  controller "line-follower"
+  controller "robot_controller"
   cpuConsumption 1.11
-  remoteControl "e-puck_bluetooth"
+  remoteControl ""
+}
+DEF supervisor Robot {
+  controller "supervisor_controller"
+  supervisor TRUE
 }
