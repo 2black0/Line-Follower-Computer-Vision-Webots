@@ -7,8 +7,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.34122639006332206 -0.5550423575467923 0.7586122409065466 5.033529108406576
-  position -0.79251200816736 0.8324801732184353 0.9947044408330526
+  orientation -0.05086777040485737 -0.9985401098552535 0.01816917566365864 4.961381363967604
+  position -0.39025175915880705 0.11614876190166046 0.5671428763021245
   follow "e-puck"
 }
 TexturedBackground {
@@ -51,7 +51,7 @@ DEF ROBOT Robot {
         }
       ]
       endPoint DEF EPUCK_LEFT_WHEEL Solid {
-        translation 0 0.025999999999999957 0.02
+        translation 0 0.025999999999997966 0.02
         rotation 0 1 0 0
         children [
           DEF EPUCK_WHEEL Pose {
@@ -204,7 +204,7 @@ DEF ROBOT Robot {
         }
       ]
       endPoint DEF EPUCK_RIGHT_WHEEL Solid {
-        translation 0 -0.02599999999999991 0.02
+        translation 0 -0.025999999999998 0.02
         rotation 0 1 0 0
         children [
           Pose {
