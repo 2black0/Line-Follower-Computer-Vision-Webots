@@ -30,7 +30,7 @@ at_initial_position = False  # To check if robot is at the initial position
 
 def log_status(lap, current_time, waypoint_index):
     log_message = f"Lap: {lap}, Time: {current_time:.2f}, Waypoint: {waypoint_index}"
-    print(log_message)
+    #print(log_message)
 
 # Log initial status
 log_status(lap, 0.0, waypoint_index)

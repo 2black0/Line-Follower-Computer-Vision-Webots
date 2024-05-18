@@ -1,207 +1,173 @@
 import cv2
+import math
 import numpy as np
 from controller import Robot
-import math
 
-class EPuckRobot:
+class LineFollower:
     def __init__(self, timestep=64):
-        self.robot = Robot()
-        self.timestep = timestep
-        self.camera = self.robot.getDevice('camera')
-        self.camera.enable(self.timestep)
-        self.width = self.camera.getWidth()
-        self.height = self.camera.getHeight()
+        self.Robot = Robot()
+        self.TimeStep = timestep
+        self.Camera = self.Robot.getDevice('camera')
+        self.Camera.enable(self.TimeStep)
+        self.CameraWidth = self.Camera.getWidth()
+        self.CameraHeight = self.Camera.getHeight()
         
         # Initialize motors
-        self.left_motor = self.robot.getDevice('left wheel motor')
-        self.right_motor = self.robot.getDevice('right wheel motor')
-        self.left_motor.setPosition(float('inf'))
-        self.right_motor.setPosition(float('inf'))
-        self.left_motor.setVelocity(0.0)
-        self.right_motor.setVelocity(0.0)
+        self.LeftMotor = self.Robot.getDevice('left wheel motor')
+        self.RightMotor = self.Robot.getDevice('right wheel motor')
+        self.LeftMotor.setPosition(float('inf'))
+        self.RightMotor.setPosition(float('inf'))
+        self.LeftMotor.setVelocity(0.0)
+        self.RightMotor.setVelocity(0.0)
         
         # Motor parameters
-        self.max_velocity = 6.28  # Maximum velocity for e-puck motors
+        self.MaxVelocity = 6.28  # Maximum velocity for e-puck motors
         
         # PID control parameters (fine-tuned)
-        self.kp = 0.06  # Proportional gain
-        self.ki = 0.015  # Integral gain
-        self.kd = 0.02  # Derivative gain
-        self.integral = 0
-        self.previous_error = 0
+        self.KpFollow = 0.02  # Proportional gain
+        self.KiFollow = 0.025  # Integral gain
+        self.KdFollow = 0.01  # Derivative gain
+        self.IntegralFollow = 0
+        self.PreviousErrorFollow = 0
         
         # PID control parameters (fine-tuned)
-        self.kp_speed = 0.05  # Proportional gain
-        self.kd_speed = 0.005  # Derivative gain
-        self.previous_error_speed = 0
+        self.KpSpeed = 0.2  # Proportional gain
+        self.KdSpeed = 0.02  # Derivative gain
+        self.PreviousErrorSpeed = 0
 
-    def run(self):
-        while self.robot.step(self.timestep) != -1:
-            self.process_camera_image()
-
-    def process_camera_image(self):
-        image = self.camera.getImage()
-        image = np.frombuffer(image, np.uint8).reshape((self.height, self.width, 4))
-        image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
-
-        # Draw a vertical line in the middle of the entire image
-        #cv2.line(image, (self.width // 2, 0), (self.width // 2, self.height), (0, 0, 255), 1)
-
-        # Define the region of interest (ROI) for line detection
-        second_roi_width = 320  # Reduced width
-        second_roi_height = 20  # Reduced height
+    def ReadCamera(self):
+        CameraImage = self.Camera.getImage()
+        CameraImage = np.frombuffer(CameraImage, np.uint8).reshape((self.CameraHeight, self.CameraWidth, 4))
+        CameraImage = cv2.cvtColor(CameraImage, cv2.COLOR_BGRA2BGR)
         
-        second_vertical_start = 0
-        second_vertical_end = second_roi_width
-        second_horizontal_start = (self.height // 2) - 80
-        second_horizontal_end = second_horizontal_start + second_roi_height
-        second_roi = image[second_horizontal_start:second_horizontal_end, second_vertical_start:second_vertical_end]
+        return CameraImage
 
-        # Process the second ROI
-        second_gray_roi = cv2.cvtColor(second_roi, cv2.COLOR_BGR2GRAY)
-        _, second_thresholded_roi = cv2.threshold(second_gray_roi, 50, 255, cv2.THRESH_BINARY_INV)
-
+    def GetReference(self, CameraImage, VerticalStart, VerticalEnd, HorizontalStart, HorizontalEnd):
+        # Process the ROI
+        Roi = CameraImage[HorizontalStart:HorizontalEnd, VerticalStart:VerticalEnd]
+        RoiGray = cv2.cvtColor(Roi, cv2.COLOR_BGR2GRAY)
+        _, RoiThreshold = cv2.threshold(RoiGray, 50, 255, cv2.THRESH_BINARY_INV)
+        
         # Calculate the moments of the binary image
-        second_moments = cv2.moments(second_thresholded_roi)
-        second_detected = False
-        if second_moments['m00'] != 0:
+        RoiMoments = cv2.moments(RoiThreshold)
+        RoiDetected = False
+        if RoiMoments['m00'] != 0:
             # Calculate the centroid of the black line in the ROI
-            second_cX = int(second_moments['m10'] / second_moments['m00'])
-            second_cY = int(second_moments['m01'] / second_moments['m00'])
+            RoiCx = int(RoiMoments['m10'] / RoiMoments['m00'])
+            RoiCy = int(RoiMoments['m01'] / RoiMoments['m00'])
 
             # Draw the centroid on the ROI
-            cv2.circle(second_roi, (second_cX, second_cY), 5, (0, 255, 0), -1)
-            second_detected = True
+            cv2.circle(Roi, (RoiCx, RoiCy), 5, (0, 255, 0), -1)
+            RoiDetected = True
+            
+            CameraImage[HorizontalStart:HorizontalEnd, VerticalStart:VerticalEnd] = Roi
+            
+            return CameraImage, RoiDetected, RoiCx, RoiCy
+        return CameraImage, RoiDetected, 0, 0
 
-        # Replace the ROI in the original image
-        #image[second_horizontal_start:second_horizontal_end, second_vertical_start:second_vertical_end] = second_roi
+    def GetErrorFollow(self, CameraImage, RoiCxFollow):
+        cv2.line(CameraImage, (self.CameraWidth // 2, 0), (self.CameraWidth // 2, self.CameraHeight), (0, 0, 255), 1)
+        ErrorFollow = (RoiCxFollow - (55 // 2))
+        return ErrorFollow
 
-        # Define the region of interest (ROI) for line detection
-        first_roi_width = 55  # Reduced width
-        first_roi_height = 20  # Reduced height
-        first_vertical_start = (self.width - first_roi_width) // 2
-        first_vertical_end = first_vertical_start + first_roi_width
-        #first_horizontal_start = self.height - first_roi_height
-        first_horizontal_start = self.height - 55        
-        #first_horizontal_end = self.height
-        first_horizontal_end = first_horizontal_start + first_roi_height
-        first_roi = image[first_horizontal_start:first_horizontal_end, first_vertical_start:first_vertical_end]
+    def GetAngleSpeed(self, CameraImage, RoiDetectedSpeed, RoiDetectedFollow, VerticalStartSpeed, VerticalStartFollow, RoiCxSpeed, RoiCxFollow, HorizontalStartSpeed, HorizontalStartFollow, RoiCySpeed, RoiCyFollow):
+        AngleSpeed = 85
+        if RoiDetectedSpeed and RoiDetectedFollow:
+            CentroidFollow = (VerticalStartFollow + RoiCxFollow, HorizontalStartFollow + RoiCySpeed)
+            CentroidSpeed = (VerticalStartSpeed + RoiCxSpeed, HorizontalStartSpeed + RoiCyFollow)
+            cv2.line(CameraImage, CentroidFollow, CentroidSpeed, (255, 255, 0), 2)
 
-        # Process the first ROI
-        first_gray_roi = cv2.cvtColor(first_roi, cv2.COLOR_BGR2GRAY)
-        _, first_thresholded_roi = cv2.threshold(first_gray_roi, 50, 255, cv2.THRESH_BINARY_INV)
+            # Calculate the angle between the line and the vertical
+            DeltaX = CentroidSpeed[0] - CentroidFollow[0]
+            DeltaY = CentroidSpeed[1] - CentroidFollow[1]
+            AngleSpeed = math.degrees(math.atan2(DeltaY, DeltaX))
 
-        # Calculate the moments of the binary image
-        first_moments = cv2.moments(first_thresholded_roi)
-        first_detected = False
-        if first_moments['m00'] != 0:
-            # Calculate the centroid of the black line in the ROI
-            cX = int(first_moments['m10'] / first_moments['m00'])
-            cY = int(first_moments['m01'] / first_moments['m00'])
-
-            # Draw the centroid on the ROI
-            cv2.circle(first_roi, (cX, cY), 5, (255, 0, 0), -1)
-            first_detected = True
-
-            # Calculate the error: distance from the center of the ROI
-            error = cX - (first_roi_width // 2)
-
-            angle = 90
-            # Draw line between centroids if both are detected
-            if first_detected and second_detected:
-                first_centroid = (first_vertical_start + cX, first_horizontal_start + cY)
-                second_centroid = (second_vertical_start + second_cX, second_horizontal_start + second_cY)
-                cv2.line(image, first_centroid, second_centroid, (255, 255, 0), 2)
-
-                # Calculate the angle between the line and the vertical
-                delta_x = second_centroid[0] - first_centroid[0]
-                delta_y = second_centroid[1] - first_centroid[1]
-                angle = math.degrees(math.atan2(delta_y, delta_x))
-
-                # Adjust angle to be relative to the vertical line
-                if angle < -90:
-                    angle += 90
-                elif angle > -90:
-                    angle -= -90
-                angle = abs(angle)
-                # Display the angle on the image
-                angle_text = f"Angle: {angle:.2f} degrees"
-                #cv2.putText(image, angle_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-            # Adjust the robot's steering based on the error
-            if angle < 15 and angle > -15:
-                angle = 0
+            # Adjust angle to be relative to the vertical line
+            if AngleSpeed < -90:
+                AngleSpeed += 90
+            elif AngleSpeed > -90:
+                AngleSpeed -= -90
+            AngleSpeed = abs(AngleSpeed)
+            
+            if AngleSpeed < 15 and AngleSpeed > -15:
+                AngleSpeed = 0
             else:
-                angle = angle
-            self.adjust_robot_steering(error, angle)
+                AngleSpeed = AngleSpeed
+        return AngleSpeed
 
-        # Replace the ROI in the original image
-        #image[first_horizontal_start:first_horizontal_end, first_vertical_start:first_vertical_end] = first_roi
-
-        # Display the image
-        resized_image = cv2.resize(image, (320, 240), interpolation=cv2.INTER_LINEAR)
-        cv2.imshow("Camera Image from e-puck", resized_image)
+    def ShowCamera(self, CameraImage):
+        ImageResize = cv2.resize(CameraImage, (320, 240), interpolation=cv2.INTER_LINEAR)
+        cv2.imshow("Camera Image from e-puck", ImageResize)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.cleanup()
 
-    def adjust_robot_steering(self, error, error_speed):
-        # Use PID control to calculate the steering adjustment
-        steering_adjustment = self.pid_control(error)
-        
-        # Base speed for the motors
-        base_speed = self.pid_control_speed(error_speed)
+    def CalculateBaseSpeed(self, AngleSpeed):
+        DerivativeSpeed = AngleSpeed - self.PreviousErrorSpeed
+        BaseSpeed = 6.0
+        # PID control equation
+        BaseSpeed = BaseSpeed - (self.KpSpeed * AngleSpeed) - (self.KdSpeed * DerivativeSpeed)
+        # Update previous error
+        self.PreviousErrorSpeed = AngleSpeed
+        return BaseSpeed
 
-        if base_speed < 2.75 and base_speed >= 0:
-            base_speed = 2.75
-        elif base_speed > -2.75 and base_speed < 0:
-            base_speed = -2.75
+    def CalculateSteeringFollow(self, ErrorFollow):
+        # Calculate integral and derivative terms
+        self.IntegralFollow += ErrorFollow
+        DerivativeFollow = ErrorFollow - self.PreviousErrorFollow
+        # PID control equation
+        SteeringFollow = (self.KpFollow * ErrorFollow) + (self.KiFollow * self.IntegralFollow) + (self.KdFollow * DerivativeFollow)
+        # Update previous error
+        self.PreviousErrorFollow = ErrorFollow
+        
+        SteeringFollow = max(min(SteeringFollow, 1.0), -1.0)            
+        return SteeringFollow
+  
+    def MotorAction(self, BaseSpeed, SteeringFollow):
+        if BaseSpeed < 2.0 and BaseSpeed >= 0:
+            BaseSpeed = 2.0
+        elif BaseSpeed > -2.0 and BaseSpeed < 0:
+            BaseSpeed = -2.0
         else:
-            base_speed = base_speed
+            BaseSpeed = BaseSpeed
 
         # Adjust the speed of the motors based on the steering adjustment
-        left_speed = base_speed + steering_adjustment
-        right_speed = base_speed - steering_adjustment
+        #LeftSpeed = BaseSpeed + SteeringFollow
+        #RightSpeed = BaseSpeed - SteeringFollow
 
         # Cap the speeds to the max velocity
-        left_speed = max(min(left_speed, self.max_velocity), -self.max_velocity)
-        right_speed = max(min(right_speed, self.max_velocity), -self.max_velocity)
+        LeftSpeed = max(min(BaseSpeed + SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
+        RightSpeed = max(min(BaseSpeed - SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
 
         # Set the motor speeds
-        self.left_motor.setVelocity(left_speed)
-        self.right_motor.setVelocity(right_speed)
-
-        # Print the steering adjustment and motor speeds with two decimal places, aligning positive and negative values
-        #print(f"Base Speed: {base_speed:+.2f}, Steering: {steering_adjustment:+.2f}, Left Speed: {left_speed:+.2f}, Right Speed: {right_speed:+.2f}")
-
-    def pid_control(self, error):
-        # Calculate integral and derivative terms
-        self.integral += error
-        derivative = error - self.previous_error
-
-        # PID control equation
-        output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
+        self.LeftMotor.setVelocity(LeftSpeed)
+        self.RightMotor.setVelocity(RightSpeed)
         
-        # Update previous error
-        self.previous_error = error
-
-        return output
+        print(f"Base Speed: {BaseSpeed:+.2f}, Steering: {SteeringFollow:+.2f}, Left Speed: {LeftSpeed:+.2f}, Right Speed: {RightSpeed:+.2f}")
     
-    def pid_control_speed(self, error_speed):
-        derivative = error_speed - self.previous_error_speed
-
-        base_speed = 6.0
-        # PID control equation
-        output = base_speed - (self.kp_speed * error_speed) - (self.kd_speed * derivative)
-            
-        # Update previous error
-        self.previous_error_speed = error_speed
-
-        return output
-
     def cleanup(self):
         cv2.destroyAllWindows()
-        self.robot.simulationQuit(0)  # Optionally add this to quit the simulation
+        self.robot.simulationQuit(0)    
+    
+    def run(self):
+        while self.Robot.step(self.TimeStep) != -1:
+            CameraImage = self.ReadCamera()
+            CameraImage, RoiDetectedSpeed, RoiCxSpeed, RoiCySpeed = self.GetReference(CameraImage, 0, 320, 40, 60)
+            CameraImage, RoiDetectedFollow, RoiCxFollow, RoiCyFollow = self.GetReference(CameraImage, 132, 185, 195, 215) #VerticalStart, VerticalEnd, HorizontalStart, HorizontalEnd
+
+            if RoiDetectedFollow: 
+                ErrorFollow = self.GetErrorFollow(CameraImage, RoiCxFollow)
+            AngleSpeed = self.GetAngleSpeed(CameraImage, RoiDetectedSpeed, RoiDetectedFollow, 0, 130, RoiCxSpeed, RoiCxFollow, 40, 185, RoiCySpeed, RoiCyFollow)
+
+            BaseSpeed = self.CalculateBaseSpeed(AngleSpeed)
+            #BaseSpeed = 2.0
+            SteeringFollow = self.CalculateSteeringFollow(ErrorFollow)
+
+            #print(AngleSpeed, ErrorFollow, BaseSpeed, SteeringFollow)
+            
+            self.MotorAction(BaseSpeed, SteeringFollow)
+            self.ShowCamera(CameraImage)
+
 
 if __name__ == "__main__":
-    epuck_robot = EPuckRobot()
-    epuck_robot.run()
+    LineFollower = LineFollower()
+    LineFollower.run()
