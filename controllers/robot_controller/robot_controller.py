@@ -1,6 +1,7 @@
 import cv2
 import math
 import numpy as np
+import skfuzzy as fuzz
 from controller import Robot
 
 class LineFollower:
@@ -24,14 +25,20 @@ class LineFollower:
         
         self.MaxVelocity = 6.28
         
-        self.KpFollow = 0.025
-        self.KiFollow = 0.0006
-        self.KdFollow = 0.006
+        # PID Speed Low
+        #self.KpFollow = 0.025
+        #self.KiFollow = 0.0006
+        #self.KdFollow = 0.006
+        
+        # PID Speed High
+        self.KpFollow = 0.05
+        self.KiFollow = 0.01
+        self.KdFollow = 0.00001
         self.IntegralFollow = 0
         self.PreviousErrorFollow = 0
         
-        self.KpSpeed = 0.2
-        self.KdSpeed = 0.02
+        self.KpSpeed = 0.01
+        self.KdSpeed = 0.00
         self.PreviousErrorSpeed = 0
 
     def ReadCamera(self):
@@ -82,7 +89,7 @@ class LineFollower:
                       SensorSpeedRow, SensorFollowRow, 
                       RoiCySpeed, RoiCyFollow, 
                       drawDot=False, drawLine=False):
-        AngleSpeed = 45        
+        AngleSpeed = 60        
         if RoiDetectedSpeed and RoiDetectedFollow:
             FirstPointCx = int((RoiCxFollow - (self.CameraWidth * SensorFollowWidth) // 2) + (self.CameraWidth / 2))
             FirstPointCy = int(self.RowHeight * SensorSpeedRow + RoiCySpeed)
@@ -111,6 +118,10 @@ class LineFollower:
             if drawLine:
                 cv2.line(CameraImage, PointA, PointB, (0, 255, 0), 2)
                 cv2.line(CameraImage, PointB, PointC, (0, 255, 0), 2)
+        if AngleSpeed < 15 and AngleSpeed > -15:
+            AngleSpeed = 0
+        else:
+            AngleSpeed = AngleSpeed
 
         return AngleSpeed
 
@@ -120,30 +131,20 @@ class LineFollower:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.cleanup()
 
-    def CalculateBaseSpeed(self, AngleSpeed):
+    def CalculateBaseSpeedPID(self, AngleSpeed, MaxSpeed):
         DerivativeSpeed = AngleSpeed - self.PreviousErrorSpeed
-        BaseSpeed = 6.0
-        BaseSpeed = BaseSpeed - (self.KpSpeed * AngleSpeed) - (self.KdSpeed * DerivativeSpeed)
+        BaseSpeed = MaxSpeed - (self.KpSpeed * AngleSpeed) - (self.KdSpeed * DerivativeSpeed)
         self.PreviousErrorSpeed = AngleSpeed
         return BaseSpeed
 
-    def CalculateSteeringFollow(self, ErrorFollow):
+    def CalculateSteeringFollowPID(self, ErrorFollow):
         self.IntegralFollow += ErrorFollow
         DerivativeFollow = ErrorFollow - self.PreviousErrorFollow
         SteeringFollow = (self.KpFollow * ErrorFollow) + (self.KiFollow * self.IntegralFollow) + (self.KdFollow * DerivativeFollow)
         self.PreviousErrorFollow = ErrorFollow
-        
-        SteeringFollow = max(min(SteeringFollow, 1.0), -1.0)            
         return SteeringFollow
   
     def MotorAction(self, BaseSpeed, SteeringFollow):
-        if BaseSpeed < 2.0 and BaseSpeed >= 0:
-            BaseSpeed = 2.0
-        elif BaseSpeed > -2.0 and BaseSpeed < 0:
-            BaseSpeed = -2.0
-        else:
-            BaseSpeed = BaseSpeed
-
         LeftSpeed = max(min(BaseSpeed + SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
         RightSpeed = max(min(BaseSpeed - SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
 
@@ -155,10 +156,10 @@ class LineFollower:
         self.robot.simulationQuit(0)    
     
     def run(self):
-        SensorSpeedRow = 2
-        SensorSpeedWidth = 0.8
-        SensorFollowRow = 10
-        SensorFollowWidth = 0.3
+        SensorSpeedRow = 9
+        SensorSpeedWidth = 1
+        SensorFollowRow = 11
+        SensorFollowWidth = 0.4
         while self.Robot.step(self.TimeStep) != -1:
             CameraImage = self.ReadCamera()
             CameraImage, RoiDetectedSpeed, RoiCxSpeed, RoiCySpeed = self.GetReference(CameraImage, SensorSpeedRow, SensorSpeedWidth, drawDot=True, drawBox=True)
@@ -166,17 +167,17 @@ class LineFollower:
 
             if RoiDetectedFollow: 
                 ErrorFollow = self.GetErrorFollow(CameraImage, RoiCxFollow, SensorFollowWidth, drawLine=True)
+            else:
+                ErrorFollow = 0
             AngleSpeed = self.GetAngleSpeed(CameraImage, RoiDetectedSpeed, RoiDetectedFollow, SensorSpeedWidth, SensorFollowWidth, RoiCxSpeed, RoiCxFollow, SensorSpeedRow, SensorFollowRow, RoiCySpeed, RoiCyFollow, drawDot=True, drawLine=True)
 
-            #BaseSpeed = self.CalculateBaseSpeed(AngleSpeed)
-            BaseSpeed = 2.0
-            SteeringFollow = self.CalculateSteeringFollow(ErrorFollow)
+            BaseSpeed = self.CalculateBaseSpeedPID(AngleSpeed, 6.28)
+            #BaseSpeed = 6.0
+            SteeringFollow = self.CalculateSteeringFollowPID(ErrorFollow)
 
-            #print(AngleSpeed, ErrorFollow BaseSpeed, SteeringFollow)
-            self.MotorAction(BaseSpeed, SteeringFollow)
-            print(f"Base Speed: {BaseSpeed:+.2f}, Steering: {SteeringFollow:+.2f}, Left Speed: {BaseSpeed+SteeringFollow:+.2f}, Right Speed: {BaseSpeed-SteeringFollow:+.2f}")
-            
-            self.ShowCamera(CameraImage)
+            print(f"Angle: {AngleSpeed:+06.2f}, Error: {ErrorFollow:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, SteeringFollow: {SteeringFollow:+06.2f}")
+            self.MotorAction(BaseSpeed, SteeringFollow)            
+            #self.ShowCamera(CameraImage)
 
 
 if __name__ == "__main__":

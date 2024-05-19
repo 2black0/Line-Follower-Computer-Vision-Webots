@@ -7,9 +7,10 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.05086777040485737 -0.9985401098552535 0.01816917566365864 4.961381363967604
-  position -0.6560221728548382 0.0940337459274603 1.6034022725396846
+  orientation 0.3853131535294102 -0.22272745537186395 -0.8955033525011481 4.006441398445546
+  position 1.5005639507458242 -2.096024658175247 2.731523881553766
   follow "e-puck"
+  followType "None"
 }
 TexturedBackground {
 }
@@ -30,8 +31,8 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation -0.290705 0.142728 -6.3962e-05
-  rotation 0.0005805628953582437 -0.00015306997241037814 0.9999998197581378 4.06941e-06
+  translation 0.178989 0.119065 -6.39621e-05
+  rotation -6.39771e-10 -2.42653e-09 1 3.14159
   children [
     HingeJoint {
       jointParameters HingeJointParameters {
