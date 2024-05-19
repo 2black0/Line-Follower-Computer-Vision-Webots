@@ -44,39 +44,71 @@ class LineFollower:
         self.KdSpeed = 0.00
         self.PreviousErrorSpeed = 0
         
-        self.Error = ctrl.Antecedent(np.arange(-200, 201, 1), 'Error')
-        #self.DerivativeError = ctrl.Antecedent(np.arange(-30, 30.1, 0.1), 'DerivativeError')
-        self.DeltaSpeed = ctrl.Consequent(np.arange(-5.0, 5.01, 0.01), 'DeltaSpeed')
+        error = ctrl.Antecedent(np.arange(-160, 161, 1), 'error')
+        delta_error = ctrl.Antecedent(np.arange(-160, 161, 1), 'delta_error')
+        delta_speed = ctrl.Consequent(np.arange(-2, 3, 1), 'delta_speed')
 
-        #self.Error.automf(3, names=['negative', 'zero', 'positive'])
-        self.Error['negative'] = fuzz.trimf(self.Error.universe, [-200, -100, -10])
-        self.Error['zero'] = fuzz.trimf(self.Error.universe, [-30, 0, 30])
-        self.Error['positive'] = fuzz.trimf(self.Error.universe, [10, 100, 200])
+        # Define membership functions for error
+        error['NL'] = fuzz.trimf(error.universe, [-160, -160, -80])
+        error['NS'] = fuzz.trimf(error.universe, [-160, -80, 0])
+        error['Z'] = fuzz.trimf(error.universe, [-80, 0, 80])
+        error['PS'] = fuzz.trimf(error.universe, [0, 80, 160])
+        error['PL'] = fuzz.trimf(error.universe, [80, 160, 160])
 
-        #self.DerivativeError.automf(3, names=['negative', 'zero', 'positive'])
-        #self.DerivativeError['negative'] = fuzz.trimf(self.DerivativeError.universe, [-30, -15, 0])
-        #self.DerivativeError['zero'] = fuzz.trimf(self.DerivativeError.universe, [-6, 0, 6])
-        #self.DerivativeError['positive'] = fuzz.trimf(self.DerivativeError.universe, [0, 15, 30])
-        
-        self.DeltaSpeed.automf(3, names=['negative', 'zero', 'positive'])
-             
-        '''self.Rule1 = ctrl.Rule(self.Error['negative'] & self.DerivativeError['negative'], self.DeltaSpeed['negative'])
-        self.Rule2 = ctrl.Rule(self.Error['negative'] & self.DerivativeError['zero'], self.DeltaSpeed['negative'])
-        self.Rule3 = ctrl.Rule(self.Error['negative'] & self.DerivativeError['positive'], self.DeltaSpeed['zero'])
-        self.Rule4 = ctrl.Rule(self.Error['zero'] & self.DerivativeError['negative'], self.DeltaSpeed['negative'])
-        self.Rule5 = ctrl.Rule(self.Error['zero'] & self.DerivativeError['zero'], self.DeltaSpeed['zero'])
-        self.Rule6 = ctrl.Rule(self.Error['zero'] & self.DerivativeError['positive'], self.DeltaSpeed['positive'])
-        self.Rule7 = ctrl.Rule(self.Error['positive'] & self.DerivativeError['negative'], self.DeltaSpeed['zero'])
-        self.Rule8 = ctrl.Rule(self.Error['positive'] & self.DerivativeError['zero'], self.DeltaSpeed['positive'])
-        self.Rule9 = ctrl.Rule(self.Error['positive'] & self.DerivativeError['positive'], self.DeltaSpeed['positive'])'''
-             
-        self.Rule1 = ctrl.Rule(self.Error['negative'], self.DeltaSpeed['negative'])
-        self.Rule2 = ctrl.Rule(self.Error['zero'], self.DeltaSpeed['zero'])
-        self.Rule3 = ctrl.Rule(self.Error['positive'], self.DeltaSpeed['positive'])
-             
-        #self.DeltaSpeedControl = ctrl.ControlSystem([self.Rule1, self.Rule2, self.Rule3, self.Rule4, self.Rule5, self.Rule6, self.Rule7, self.Rule8, self.Rule9])
-        self.DeltaSpeedControl = ctrl.ControlSystem([self.Rule1, self.Rule2, self.Rule3])
-        self.DeltaSpeedSim = ctrl.ControlSystemSimulation(self.DeltaSpeedControl)
+        # Define membership functions for delta error
+        delta_error['NL'] = fuzz.trimf(delta_error.universe, [-160, -160, -80])
+        delta_error['NS'] = fuzz.trimf(delta_error.universe, [-160, -80, 0])
+        delta_error['Z'] = fuzz.trimf(delta_error.universe, [-80, 0, 80])
+        delta_error['PS'] = fuzz.trimf(delta_error.universe, [0, 80, 160])
+        delta_error['PL'] = fuzz.trimf(delta_error.universe, [80, 160, 160])
+
+        # Define membership functions for delta speed
+        delta_speed['DL'] = fuzz.trimf(delta_speed.universe, [-2, -2, -1])
+        delta_speed['DS'] = fuzz.trimf(delta_speed.universe, [-2, -1, 0])
+        delta_speed['NC'] = fuzz.trimf(delta_speed.universe, [-1, 0, 1])
+        delta_speed['IS'] = fuzz.trimf(delta_speed.universe, [0, 1, 2])
+        delta_speed['IL'] = fuzz.trimf(delta_speed.universe, [1, 2, 2])
+
+        # Define fuzzy rules
+        rule1 = ctrl.Rule(error['NL'] & delta_error['NL'], delta_speed['DL'])
+        rule2 = ctrl.Rule(error['NL'] & delta_error['NS'], delta_speed['DL'])
+        rule3 = ctrl.Rule(error['NL'] & delta_error['Z'], delta_speed['DS'])
+        rule4 = ctrl.Rule(error['NL'] & delta_error['PS'], delta_speed['NC'])
+        rule5 = ctrl.Rule(error['NL'] & delta_error['PL'], delta_speed['IS'])
+
+        rule6 = ctrl.Rule(error['NS'] & delta_error['NL'], delta_speed['DL'])
+        rule7 = ctrl.Rule(error['NS'] & delta_error['NS'], delta_speed['DS'])
+        rule8 = ctrl.Rule(error['NS'] & delta_error['Z'], delta_speed['NC'])
+        rule9 = ctrl.Rule(error['NS'] & delta_error['PS'], delta_speed['IS'])
+        rule10 = ctrl.Rule(error['NS'] & delta_error['PL'], delta_speed['IL'])
+
+        rule11 = ctrl.Rule(error['Z'] & delta_error['NL'], delta_speed['DS'])
+        rule12 = ctrl.Rule(error['Z'] & delta_error['NS'], delta_speed['NC'])
+        rule13 = ctrl.Rule(error['Z'] & delta_error['Z'], delta_speed['NC'])
+        rule14 = ctrl.Rule(error['Z'] & delta_error['PS'], delta_speed['NC'])
+        rule15 = ctrl.Rule(error['Z'] & delta_error['PL'], delta_speed['IS'])
+
+        rule16 = ctrl.Rule(error['PS'] & delta_error['NL'], delta_speed['DS'])
+        rule17 = ctrl.Rule(error['PS'] & delta_error['NS'], delta_speed['NC'])
+        rule18 = ctrl.Rule(error['PS'] & delta_error['Z'], delta_speed['IS'])
+        rule19 = ctrl.Rule(error['PS'] & delta_error['PS'], delta_speed['IL'])
+        rule20 = ctrl.Rule(error['PS'] & delta_error['PL'], delta_speed['IL'])
+
+        rule21 = ctrl.Rule(error['PL'] & delta_error['NL'], delta_speed['NC'])
+        rule22 = ctrl.Rule(error['PL'] & delta_error['NS'], delta_speed['IS'])
+        rule23 = ctrl.Rule(error['PL'] & delta_error['Z'], delta_speed['IS'])
+        rule24 = ctrl.Rule(error['PL'] & delta_error['PS'], delta_speed['IL'])
+        rule25 = ctrl.Rule(error['PL'] & delta_error['PL'], delta_speed['IL'])
+
+        # Control system creation and simulation
+        delta_speed_ctrl = ctrl.ControlSystem([
+            rule1, rule2, rule3, rule4, rule5,
+            rule6, rule7, rule8, rule9, rule10,
+            rule11, rule12, rule13, rule14, rule15,
+            rule16, rule17, rule18, rule19, rule20,
+            rule21, rule22, rule23, rule24, rule25
+        ])
+        self.DeltaSpeedSim = ctrl.ControlSystemSimulation(delta_speed_ctrl)
 
     def ReadCamera(self):
         CameraImage = self.Camera.getImage()
@@ -185,8 +217,8 @@ class LineFollower:
         ErrorFollow = max(min(ErrorFollow, 200), -200)
         DerivativeFollow = ErrorFollow - self.PreviousErrorFollow
         DerivativeFollow = max(min(DerivativeFollow, 30), -30)
-        self.DeltaSpeedSim.input['Error'] = ErrorFollow
-        #self.DeltaSpeedSim.input['DerivativeError'] = DerivativeFollow
+        self.DeltaSpeedSim.input['error'] = ErrorFollow
+        self.DeltaSpeedSim.input['delta_error'] = DerivativeFollow
         self.DeltaSpeedSim.compute()
         self.PreviousErrorFollow = ErrorFollow
         return DerivativeFollow, self.DeltaSpeedSim.output['DeltaSpeed']
