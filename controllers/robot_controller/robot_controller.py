@@ -1,8 +1,11 @@
 import cv2
+import os
 import math
+import csv
 import numpy as np
 import skfuzzy as fuzz
 from controller import Robot
+from skfuzzy import control as ctrl
 
 class LineFollower:
     def __init__(self, timestep=64):
@@ -40,6 +43,40 @@ class LineFollower:
         self.KpSpeed = 0.01
         self.KdSpeed = 0.00
         self.PreviousErrorSpeed = 0
+        
+        self.Error = ctrl.Antecedent(np.arange(-200, 201, 1), 'Error')
+        #self.DerivativeError = ctrl.Antecedent(np.arange(-30, 30.1, 0.1), 'DerivativeError')
+        self.DeltaSpeed = ctrl.Consequent(np.arange(-5.0, 5.01, 0.01), 'DeltaSpeed')
+
+        #self.Error.automf(3, names=['negative', 'zero', 'positive'])
+        self.Error['negative'] = fuzz.trimf(self.Error.universe, [-200, -100, -10])
+        self.Error['zero'] = fuzz.trimf(self.Error.universe, [-30, 0, 30])
+        self.Error['positive'] = fuzz.trimf(self.Error.universe, [10, 100, 200])
+
+        #self.DerivativeError.automf(3, names=['negative', 'zero', 'positive'])
+        #self.DerivativeError['negative'] = fuzz.trimf(self.DerivativeError.universe, [-30, -15, 0])
+        #self.DerivativeError['zero'] = fuzz.trimf(self.DerivativeError.universe, [-6, 0, 6])
+        #self.DerivativeError['positive'] = fuzz.trimf(self.DerivativeError.universe, [0, 15, 30])
+        
+        self.DeltaSpeed.automf(3, names=['negative', 'zero', 'positive'])
+             
+        '''self.Rule1 = ctrl.Rule(self.Error['negative'] & self.DerivativeError['negative'], self.DeltaSpeed['negative'])
+        self.Rule2 = ctrl.Rule(self.Error['negative'] & self.DerivativeError['zero'], self.DeltaSpeed['negative'])
+        self.Rule3 = ctrl.Rule(self.Error['negative'] & self.DerivativeError['positive'], self.DeltaSpeed['zero'])
+        self.Rule4 = ctrl.Rule(self.Error['zero'] & self.DerivativeError['negative'], self.DeltaSpeed['negative'])
+        self.Rule5 = ctrl.Rule(self.Error['zero'] & self.DerivativeError['zero'], self.DeltaSpeed['zero'])
+        self.Rule6 = ctrl.Rule(self.Error['zero'] & self.DerivativeError['positive'], self.DeltaSpeed['positive'])
+        self.Rule7 = ctrl.Rule(self.Error['positive'] & self.DerivativeError['negative'], self.DeltaSpeed['zero'])
+        self.Rule8 = ctrl.Rule(self.Error['positive'] & self.DerivativeError['zero'], self.DeltaSpeed['positive'])
+        self.Rule9 = ctrl.Rule(self.Error['positive'] & self.DerivativeError['positive'], self.DeltaSpeed['positive'])'''
+             
+        self.Rule1 = ctrl.Rule(self.Error['negative'], self.DeltaSpeed['negative'])
+        self.Rule2 = ctrl.Rule(self.Error['zero'], self.DeltaSpeed['zero'])
+        self.Rule3 = ctrl.Rule(self.Error['positive'], self.DeltaSpeed['positive'])
+             
+        #self.DeltaSpeedControl = ctrl.ControlSystem([self.Rule1, self.Rule2, self.Rule3, self.Rule4, self.Rule5, self.Rule6, self.Rule7, self.Rule8, self.Rule9])
+        self.DeltaSpeedControl = ctrl.ControlSystem([self.Rule1, self.Rule2, self.Rule3])
+        self.DeltaSpeedSim = ctrl.ControlSystemSimulation(self.DeltaSpeedControl)
 
     def ReadCamera(self):
         CameraImage = self.Camera.getImage()
@@ -137,12 +174,22 @@ class LineFollower:
         self.PreviousErrorSpeed = AngleSpeed
         return BaseSpeed
 
-    def CalculateSteeringFollowPID(self, ErrorFollow):
+    def CalculateDeltaSpeedPID(self, ErrorFollow):
         self.IntegralFollow += ErrorFollow
         DerivativeFollow = ErrorFollow - self.PreviousErrorFollow
-        SteeringFollow = (self.KpFollow * ErrorFollow) + (self.KiFollow * self.IntegralFollow) + (self.KdFollow * DerivativeFollow)
+        DeltaSpeed = (self.KpFollow * ErrorFollow) + (self.KiFollow * self.IntegralFollow) + (self.KdFollow * DerivativeFollow)
         self.PreviousErrorFollow = ErrorFollow
-        return SteeringFollow
+        return DerivativeFollow, DeltaSpeed
+  
+    def CalculateDeltaSpeedFuzzy(self, ErrorFollow):
+        ErrorFollow = max(min(ErrorFollow, 200), -200)
+        DerivativeFollow = ErrorFollow - self.PreviousErrorFollow
+        DerivativeFollow = max(min(DerivativeFollow, 30), -30)
+        self.DeltaSpeedSim.input['Error'] = ErrorFollow
+        #self.DeltaSpeedSim.input['DerivativeError'] = DerivativeFollow
+        self.DeltaSpeedSim.compute()
+        self.PreviousErrorFollow = ErrorFollow
+        return DerivativeFollow, self.DeltaSpeedSim.output['DeltaSpeed']
   
     def MotorAction(self, BaseSpeed, SteeringFollow):
         LeftSpeed = max(min(BaseSpeed + SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
@@ -156,10 +203,10 @@ class LineFollower:
         self.robot.simulationQuit(0)    
     
     def run(self):
-        SensorSpeedRow = 9
+        SensorSpeedRow = 0
         SensorSpeedWidth = 1
-        SensorFollowRow = 11
-        SensorFollowWidth = 0.4
+        SensorFollowRow = 7
+        SensorFollowWidth = 1
         while self.Robot.step(self.TimeStep) != -1:
             CameraImage = self.ReadCamera()
             CameraImage, RoiDetectedSpeed, RoiCxSpeed, RoiCySpeed = self.GetReference(CameraImage, SensorSpeedRow, SensorSpeedWidth, drawDot=True, drawBox=True)
@@ -167,18 +214,20 @@ class LineFollower:
 
             if RoiDetectedFollow: 
                 ErrorFollow = self.GetErrorFollow(CameraImage, RoiCxFollow, SensorFollowWidth, drawLine=True)
-            else:
-                ErrorFollow = 0
-            AngleSpeed = self.GetAngleSpeed(CameraImage, RoiDetectedSpeed, RoiDetectedFollow, SensorSpeedWidth, SensorFollowWidth, RoiCxSpeed, RoiCxFollow, SensorSpeedRow, SensorFollowRow, RoiCySpeed, RoiCyFollow, drawDot=True, drawLine=True)
+            #else:
+            #    ErrorFollow = 0
+            #AngleSpeed = self.GetAngleSpeed(CameraImage, RoiDetectedSpeed, RoiDetectedFollow, SensorSpeedWidth, SensorFollowWidth, RoiCxSpeed, RoiCxFollow, SensorSpeedRow, SensorFollowRow, RoiCySpeed, RoiCyFollow, drawDot=True, drawLine=True)
 
-            BaseSpeed = self.CalculateBaseSpeedPID(AngleSpeed, 6.28)
-            #BaseSpeed = 6.0
-            SteeringFollow = self.CalculateSteeringFollowPID(ErrorFollow)
-
-            print(f"Angle: {AngleSpeed:+06.2f}, Error: {ErrorFollow:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, SteeringFollow: {SteeringFollow:+06.2f}")
-            self.MotorAction(BaseSpeed, SteeringFollow)            
-            #self.ShowCamera(CameraImage)
-
+            #BaseSpeed = self.CalculateBaseSpeedPID(AngleSpeed, 6.28)
+            BaseSpeed = 2.0
+            #DerivativeError, DeltaSpeed = self.CalculateDeltaSpeedPID(ErrorFollow)
+            DerivativeError, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(ErrorFollow)
+            
+            #print(f"Angle: {AngleSpeed:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {ErrorFollow:+06.2f}, DerivativeError: {DerivativeError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+            #print(f"Angle: {AngleSpeed:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {ErrorFollow:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+            print(f"Error: {ErrorFollow:+06.2f}, DerivativeError: {DerivativeError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+            self.MotorAction(BaseSpeed, DeltaSpeed)            
+            self.ShowCamera(CameraImage)
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
