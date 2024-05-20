@@ -16,6 +16,12 @@ class LineFollower:
         self.CameraWidth = self.Camera.getWidth()
         self.CameraHeight = self.Camera.getHeight()
         
+        self.GPS = self.Robot.getDevice("gps")
+        self.GPS.enable(self.TimeStep)
+
+        self.IMU = self.Robot..getDevice("inertial unit")
+        self.IMU.enable(self.TimeStep)
+
         self.RowTotal = 12
         self.RowHeight = int(self.CameraHeight / self.RowTotal)
         
@@ -114,7 +120,7 @@ class LineFollower:
         self.FileName = 'output.csv'
         with open(self.FileName, 'w', newline='') as csvfile:
             log_writer = csv.writer(csvfile)
-            log_writer.writerow(['Time', 'SetPoint', 'Error', 'DeltaError', 'DeltaSpeed', 'BaseSpeed', 'LeftSpeed', 'RightSpeed', 'Angle'])
+            log_writer.writerow(['Time', 'SetPoint', 'Error', 'DeltaError', 'DeltaSpeed', 'BaseSpeed', 'LeftSpeed', 'RightSpeed', 'Angle', 'X', 'Y', 'Z', 'Roll', 'Pitch', 'Yaw'])
 
     def ReadCamera(self):
         CameraImage = self.Camera.getImage()
@@ -240,10 +246,20 @@ class LineFollower:
         cv2.destroyAllWindows()
         self.robot.simulationQuit(0)    
     
-    def LogData(self, FileName, TimeStep, SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, LeftSpeed, RightSpeed, Angle):
+    def ReadGPS(self):
+        Position = self.GPS.getValues()
+        #print(f"Position: x={Position[0]}, y={Position[1]}, z={Position[2]}")
+        return Position
+    
+    def ReadIMU(self):    
+        Orientation = self.IMU.getRollPitchYaw()
+        #print(f"Orientation: roll={Orientation[0]}, pitch={Orientation[1]}, yaw={Orientation[2]}")
+        return Orientation
+        
+    def LogData(self, FileName, TimeStep, SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, LeftSpeed, RightSpeed, Angle, X, Y, Z, Roll, Pitch, Yaw):
         with open(FileName, 'a', newline='') as csvfile:
             log_writer = csv.writer(csvfile)
-            log_writer.writerow([TimeStep, SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, LeftSpeed, RightSpeed, Angle])
+            log_writer.writerow([TimeStep, SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, LeftSpeed, RightSpeed, Angle, X, Y, Z, Roll, Pitch, Yaw])
 
     def run(self):
         while self.Robot.step(self.TimeStep) != -1:
@@ -252,6 +268,9 @@ class LineFollower:
             CameraImage = self.ReadCamera()
             CameraImage, RoiDetectedSpeed, RoiCxSpeed, RoiCySpeed = self.GetReference(CameraImage, self.SensorSpeedRow, self.SensorSpeedWidth, drawDot=True, drawBox=True)
             CameraImage, RoiDetectedFollow, RoiCxFollow, RoiCyFollow = self.GetReference(CameraImage, self.SensorFollowRow, self.SensorFollowWidth, drawDot=True, drawBox=True)
+
+            Position = self.ReadGPS()
+            Orientation = self.ReadIMU()
 
             if RoiDetectedFollow: 
                 Error = self.GetErrorFollow(CameraImage, RoiCxFollow, drawLine=True)
@@ -269,7 +288,12 @@ class LineFollower:
             #print(f"Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             
             self.MotorAction(BaseSpeed, DeltaSpeed)            
-            #self.LogData(self.FileName, Time, self.SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, Angle)
+            self.LogData(self.FileName, Time, self.SetPoint, 
+                         Error, DeltaError, 
+                         DeltaSpeed, BaseSpeed, 
+                         BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, 
+                         Angle, Position[0], Position[1], Position[2],
+                         Orientation[0], Orientation[1], Orientation[2])
 
             #self.ShowCamera(CameraImage)
 
