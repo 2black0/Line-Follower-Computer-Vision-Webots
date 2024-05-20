@@ -271,7 +271,7 @@ class LineFollower:
             self.MotorAction(BaseSpeed, DeltaSpeed)            
             #self.LogData(self.FileName, Time, self.SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, Angle)
 
-            #self.ShowCamera(CameraImage)
+            self.ShowCamera(CameraImage)
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
