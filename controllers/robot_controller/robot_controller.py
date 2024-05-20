@@ -30,7 +30,7 @@ class LineFollower:
         
         self.SensorSpeedRow = 0
         self.SensorSpeedWidth = 1
-        self.SensorFollowRow = 7
+        self.SensorFollowRow = 10
         self.SensorFollowWidth = 0.5
         self.SetPoint = (self.CameraWidth * self.SensorFollowWidth) // 2
         
@@ -255,32 +255,23 @@ class LineFollower:
 
             if RoiDetectedFollow: 
                 Error = self.GetErrorFollow(CameraImage, RoiCxFollow, drawLine=True)
-                
-                #Angle = self.GetAngleSpeed(CameraImage, RoiDetectedSpeed, RoiDetectedFollow, self.SensorSpeedWidth, RoiCxSpeed, RoiCxFollow, self.SensorSpeedRow, self.SensorFollowRow, RoiCySpeed, RoiCyFollow, drawDot=True, drawLine=True)
-                #BaseSpeed = self.CalculateBaseSpeedPID(Angle, 6.28)
-                
-                #DeltaError, DeltaSpeed = self.CalculateDeltaSpeedPID(Error)
-                #DeltaError, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(Error)
-                
-                #print(f"Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
-            
-            else:
-                Error = 0
+            #else:
+            #    Error = 0
             Angle = self.GetAngleSpeed(CameraImage, RoiDetectedSpeed, RoiDetectedFollow, self.SensorSpeedWidth, RoiCxSpeed, RoiCxFollow, self.SensorSpeedRow, self.SensorFollowRow, RoiCySpeed, RoiCyFollow, drawDot=True, drawLine=True)
 
             BaseSpeed = self.CalculateBaseSpeedPID(Angle, 6.28)
             #BaseSpeed = 4.0
-            DeltaError, DeltaSpeed = self.CalculateDeltaSpeedPID(Error)
-            #DeltaError, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(Error)
+            #DeltaError, DeltaSpeed = self.CalculateDeltaSpeedPID(Error)
+            DeltaError, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(Error)
             
             #print(f"Angle: {Angle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DerivativeError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             #print(f"Angle: {AngleSpeed:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {ErrorFollow:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             #print(f"Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             
             self.MotorAction(BaseSpeed, DeltaSpeed)            
-            self.LogData(self.FileName, Time, self.SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, Angle)
+            #self.LogData(self.FileName, Time, self.SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, Angle)
 
-            self.ShowCamera(CameraImage)
+            #self.ShowCamera(CameraImage)
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
