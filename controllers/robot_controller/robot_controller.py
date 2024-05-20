@@ -30,7 +30,7 @@ class LineFollower:
         
         self.SensorSpeedRow = 0
         self.SensorSpeedWidth = 1
-        self.SensorFollowRow = 10
+        self.SensorFollowRow = 11
         self.SensorFollowWidth = 0.5
         self.SetPoint = (self.CameraWidth * self.SensorFollowWidth) // 2
         
@@ -261,10 +261,10 @@ class LineFollower:
 
             BaseSpeed = self.CalculateBaseSpeedPID(Angle, 6.28)
             #BaseSpeed = 4.0
-            #DeltaError, DeltaSpeed = self.CalculateDeltaSpeedPID(Error)
-            DeltaError, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(Error)
+            DeltaError, DeltaSpeed = self.CalculateDeltaSpeedPID(Error)
+            #DeltaError, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(Error)
             
-            #print(f"Angle: {Angle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DerivativeError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+            print(f"Angle: {Angle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DerivativeError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             #print(f"Angle: {AngleSpeed:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {ErrorFollow:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             #print(f"Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             
