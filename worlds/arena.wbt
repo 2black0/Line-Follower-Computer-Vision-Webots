@@ -8,7 +8,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation 0.4156354131987544 -0.3779360841848581 -0.827291677442797 4.348266018755215
-  position 0.10948592402029544 -1.1724928166283044 2.1129126696400014
+  position 0.19000439126798171 -1.2020799649234066 2.080719568912674
   follow "e-puck"
   followType "None"
 }
@@ -34,6 +34,8 @@ DEF ROBOT Robot {
   translation -0.148491 0.43918 -6.39636e-05
   rotation 3.20313e-10 2.51077e-09 -1 -2.8797953071795863
   children [
+    DEF EPUCK_GPS GPS {
+    }
     HingeJoint {
       jointParameters HingeJointParameters {
         position 1.1848075518378706e-11

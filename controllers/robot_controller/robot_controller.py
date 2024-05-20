@@ -16,10 +16,10 @@ class LineFollower:
         self.CameraWidth = self.Camera.getWidth()
         self.CameraHeight = self.Camera.getHeight()
         
-        self.GPS = self.Robot.getDevice("gps")
+        self.GPS = self.Robot.getDevice('gps')
         self.GPS.enable(self.TimeStep)
 
-        self.IMU = self.Robot..getDevice("inertial unit")
+        self.IMU = self.Robot.getDevice('accelerometer')
         self.IMU.enable(self.TimeStep)
 
         self.RowTotal = 12
@@ -122,11 +122,16 @@ class LineFollower:
             log_writer = csv.writer(csvfile)
             log_writer.writerow(['Time', 'SetPoint', 'Error', 'DeltaError', 'DeltaSpeed', 'BaseSpeed', 'LeftSpeed', 'RightSpeed', 'Angle', 'X', 'Y', 'Z', 'Roll', 'Pitch', 'Yaw'])
 
+        self.VideoFileName = 'output.avi'
+        #self.Fourcc = cv2.VideoWriter_fourcc("X", "V", "I", "D")
+        #self.Fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
+        #self.VideoOut = cv2.VideoWriter(self.VideoFileName, self.Fourcc, 20.0, (self.CameraWidth, self.CameraHeight))
+        self.VideoOut = cv2.VideoWriter(self.VideoFileName,  cv2.VideoWriter_fourcc(*'MJPG'), 30, (self.CameraWidth, self.CameraHeight)) 
+
     def ReadCamera(self):
         CameraImage = self.Camera.getImage()
         CameraImage = np.frombuffer(CameraImage, np.uint8).reshape((self.CameraHeight, self.CameraWidth, 4))
         CameraImage = cv2.cvtColor(CameraImage, cv2.COLOR_BGRA2BGR)
-        
         return CameraImage
 
     def GetReference(self, CameraImage, SensorRow, SensorWidth, drawDot=False, drawBox=False):
@@ -203,12 +208,14 @@ class LineFollower:
             AngleSpeed = 0
         else:
             AngleSpeed = AngleSpeed
-
         return AngleSpeed
 
-    def ShowCamera(self, CameraImage):
+    def ShowCamera(self, CameraImage, Show=False, Saved=False):
         ImageResize = cv2.resize(CameraImage, (320, 240), interpolation=cv2.INTER_LINEAR)
-        cv2.imshow("Camera Image from e-puck", ImageResize)
+        if Show:
+            cv2.imshow("Camera Image from e-puck", ImageResize)
+        if Saved:
+            self.VideoOut.write(ImageResize)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.cleanup()
 
@@ -238,11 +245,11 @@ class LineFollower:
     def MotorAction(self, BaseSpeed, SteeringFollow):
         LeftSpeed = max(min(BaseSpeed + SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
         RightSpeed = max(min(BaseSpeed - SteeringFollow, self.MaxVelocity), -self.MaxVelocity)
-
         self.LeftMotor.setVelocity(LeftSpeed)
         self.RightMotor.setVelocity(RightSpeed)
     
     def cleanup(self):
+        self.VideoOut.release()
         cv2.destroyAllWindows()
         self.robot.simulationQuit(0)    
     
@@ -252,7 +259,7 @@ class LineFollower:
         return Position
     
     def ReadIMU(self):    
-        Orientation = self.IMU.getRollPitchYaw()
+        Orientation = self.IMU.getValues()
         #print(f"Orientation: roll={Orientation[0]}, pitch={Orientation[1]}, yaw={Orientation[2]}")
         return Orientation
         
@@ -295,7 +302,7 @@ class LineFollower:
                          Angle, Position[0], Position[1], Position[2],
                          Orientation[0], Orientation[1], Orientation[2])
 
-            #self.ShowCamera(CameraImage)
+            self.ShowCamera(CameraImage, Show=False, Saved=False)
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
