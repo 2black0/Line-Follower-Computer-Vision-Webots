@@ -267,9 +267,9 @@ class LineFollower:
             #print(f"Error: {ErrorFollow:+06.2f}, DerivativeError: {DerivativeError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             
             self.MotorAction(BaseSpeed, DeltaSpeed)            
-            self.LogData(self.FileName, self.TimeStep, self.SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, Angle)
+            #self.LogData(self.FileName, self.TimeStep, self.SetPoint, Error, DeltaError, DeltaSpeed, BaseSpeed, BaseSpeed+DeltaSpeed, BaseSpeed-DeltaSpeed, Angle)
 
-            #self.ShowCamera(CameraImage)
+            self.ShowCamera(CameraImage)
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
