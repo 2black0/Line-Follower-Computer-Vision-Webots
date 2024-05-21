@@ -58,6 +58,7 @@ class LineFollower:
     def InitPID(self):
         self.KpBaseSpeed = 0.05
         self.KdBaseSpeed = 0.001
+        self.IntegralAngle = 0
         self.PreviousAngle = 0
         
         self.KpDeltaSpeed = 0.05
@@ -142,8 +143,8 @@ class LineFollower:
         with open(self.FileName, 'w', newline='') as csvfile:
             log_writer = csv.writer(csvfile)
             log_writer.writerow(['Time', 
-                                 'SetPointAngle', 'SensorAngleRow', 'SensorAngleWidth', 'Angle', 'DeltaAngle', 'BaseSpeed', 
-                                 'SetPointError', 'SensorErrorRow', 'SensorErrorWidth', 'Error', 'DeltaError', 'DeltaSpeed', 
+                                 'SetPointAngle', 'SensorAngleRow', 'SensorAngleWidth', 'Angle', 'IntegralAngle', 'DeltaAngle', 'BaseSpeed', 
+                                 'SetPointError', 'SensorErrorRow', 'SensorErrorWidth', 'Error', 'IntegralError', 'DeltaError', 'DeltaSpeed', 
                                  'LeftSpeed', 'RightSpeed', 
                                  'X', 'Y', 'Z', 
                                  'Roll', 'Pitch', 'Yaw'])
@@ -200,7 +201,6 @@ class LineFollower:
         return Error
 
     def GetAngle(self, CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=False, drawLine=False):
-        
         RoiDetectedError = ReferenceValueError[0]
         RoiCxError = ReferenceValueError[1]
         RoiCyError = ReferenceValueError[2]
@@ -251,6 +251,7 @@ class LineFollower:
 
     def CalculateBaseSpeed(self, Angle, MaxSpeed, Control='PID'):
         DeltaAngle = Angle - self.PreviousAngle
+        self.IntegralAngle += Angle
         if Control == 'PID':
             BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
         elif Control == 'Learning':
@@ -259,12 +260,13 @@ class LineFollower:
             })
             BaseSpeed = self.BaseSpeedModel.predict(BaseSpeedData)[0]
         self.PreviousAngle = Angle
-        return DeltaAngle, BaseSpeed
+        AngleValue = [Angle, self.IntegralAngle, DeltaAngle]
+        return AngleValue, BaseSpeed
 
     def CalculateDeltaSpeed(self, Error, DeltaSpeed, Control='PID'):
         DeltaError = Error - self.PreviousError
+        self.IntegralError += Error
         if Control == 'PID':
-            self.IntegralError += Error
             DeltaSpeed = (self.KpDeltaSpeed * Error) + (self.KiDeltaSpeed * self.IntegralError) + (self.KdDeltaSpeed * DeltaError)
         elif Control == "Fuzzy":
             Error = max(min(Error, 320), -320)
@@ -279,7 +281,8 @@ class LineFollower:
             })
             DeltaSpeed = self.DeltaSpeedModel.predict(DeltaSpeedData)[0]
         self.PreviousError = Error
-        return DeltaError, DeltaSpeed
+        ErrorValue = [Error, self.IntegralError, DeltaError]
+        return ErrorValue, DeltaSpeed
   
     def MotorAction(self, BaseSpeed, DeltaSpeed):
         LeftSpeed = max(min(BaseSpeed + DeltaSpeed, self.MaxVelocity), -self.MaxVelocity)
@@ -301,15 +304,21 @@ class LineFollower:
         Orientation = self.IMU.getValues()
         return Orientation
         
-    def LogData(self, FileName, Time, SensorAngle, Angle, DeltaAngle, BaseSpeed, SensorError, Error, DeltaError, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation):
+    def LogData(self, FileName, Time, SensorAngle, AngleValue, BaseSpeed, SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation):
         with open(FileName, 'a', newline='') as csvfile:
             log_writer = csv.writer(csvfile)
             SetPointAngle = SensorAngle[0]
             SensorAngleRow = SensorAngle[1]
             SensorAngleWidth = SensorAngle[2]
+            Angle = AngleValue[0]
+            IntegralAngle = AngleValue[1]
+            DeltaAngle = AngleValue[2]
             SetPointError = SensorError[0]
             SensorErrorRow = SensorError[1]
             SensorErrorWidth = SensorError[2]
+            Error = ErrorValue[0]
+            IntegralError = ErrorValue[1]
+            DeltaError = ErrorValue[2]
             X = Position[0]
             Y = Position[1]
             Z = Position[2]
@@ -317,8 +326,8 @@ class LineFollower:
             Pitch = Orientation[1]
             Yaw = Orientation[2]
             log_writer.writerow([Time, 
-                                SetPointAngle, SensorAngleRow, SensorAngleWidth, Angle, DeltaAngle, BaseSpeed, 
-                                SetPointError, SensorErrorRow, SensorErrorWidth, Error, DeltaError, DeltaSpeed, 
+                                SetPointAngle, SensorAngleRow, SensorAngleWidth, Angle, IntegralAngle, DeltaAngle, BaseSpeed, 
+                                SetPointError, SensorErrorRow, SensorErrorWidth, Error, IntegralError, DeltaError, DeltaSpeed, 
                                 LeftSpeed, RightSpeed, 
                                 X, Y, Z, Roll, Pitch, Yaw])
 
@@ -336,15 +345,15 @@ class LineFollower:
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             
-            DeltaAngle, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID')
-            DeltaError, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'PID')            
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID')
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'PID')            
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
             
-            print(f"Angle: {Angle:+06.2f}, DeltaAngle: {DeltaAngle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+            print(f"Angle: {AngleValue[0]:+06.2f}, DeltaAngle: {AngleValue[2]:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {ErrorValue[0]:+06.2f}, DeltaError: {ErrorValue[2]:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             
             self.LogData(self.FileName, Time, 
-                         self.SensorAngle, Angle, DeltaAngle, BaseSpeed, 
-                         self.SensorError, Error, DeltaError, DeltaSpeed, 
+                         self.SensorAngle, AngleValue, BaseSpeed, 
+                         self.SensorError, ErrorValue, DeltaSpeed, 
                          LeftSpeed, RightSpeed, 
                          Position, Orientation)
 
