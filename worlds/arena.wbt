@@ -7,10 +7,9 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation 0.4156354131987544 -0.3779360841848581 -0.827291677442797 4.348266018755215
-  position 0.19000439126798171 -1.2020799649234066 2.080719568912674
+  orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
+  position 0.2610436530925764 0.3989126526444539 0.35987940958889914
   follow "e-puck"
-  followType "None"
 }
 TexturedBackground {
 }
@@ -18,8 +17,8 @@ TexturedBackgroundLight {
 }
 RectangleArena {
   rotation 0 0 1 -1.5707953071795862
-  floorSize 1.2 1.8
-  floorTileSize 1.2 1.8
+  floorSize 1.5 1.5
+  floorTileSize 1.5 1.5
   floorAppearance PBRAppearance {
     baseColorMap ImageTexture {
       url [
@@ -31,8 +30,8 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation -0.148491 0.43918 -6.39636e-05
-  rotation 3.20313e-10 2.51077e-09 -1 -2.8797953071795863
+  translation 0.260682 0.385 -6.3964e-05
+  rotation -6.3977e-10 -2.42653e-09 1 3.14159
   children [
     DEF EPUCK_GPS GPS {
     }
