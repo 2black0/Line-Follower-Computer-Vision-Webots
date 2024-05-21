@@ -13,6 +13,15 @@ class LineFollower:
         self.Robot = Robot()
         self.TimeStep = 16#int(self.Robot.getBasicTimeStep())
         
+        self.InitSensor()
+        self.InitMotor()        
+        self.InitPID()
+        self.InitFuzzy()
+        self.InitLearning()
+        self.InitCSV()
+        self.InitRecording()
+
+    def InitSensor(self):
         self.Camera = self.Robot.getDevice('camera')
         self.Camera.enable(self.TimeStep)
         self.CameraWidth = self.Camera.getWidth()
@@ -23,27 +32,30 @@ class LineFollower:
 
         self.IMU = self.Robot.getDevice('accelerometer')
         self.IMU.enable(self.TimeStep)
-
+        
         self.RowTotal = 12
         self.RowHeight = int(self.CameraHeight / self.RowTotal)
         
+        #self.SetPointAngle = 0
+        #self.SensorAngleRow = 4
+        #self.SensorAngleWidth = 1
+        self.SensorAngle = [0, 4, 1] # SetPoint, Row, Width
+        
+        self.SetPointError = (self.CameraWidth * self.SensorErrorWidth) // 2
+        #self.SensorErrorRow = 7
+        #self.SensorErrorWidth = 1
+        self.SensorError = [self.SetPointError, 7, 1] # SetPoint, Row, Width
+
+    def InitMotor(self):
         self.LeftMotor = self.Robot.getDevice('left wheel motor')
         self.RightMotor = self.Robot.getDevice('right wheel motor')
         self.LeftMotor.setPosition(float('inf'))
         self.RightMotor.setPosition(float('inf'))
         self.LeftMotor.setVelocity(0.0)
         self.RightMotor.setVelocity(0.0)
-        
         self.MaxVelocity = 6.28
-        
-        self.SensorAngleRow = 4
-        self.SensorAngleWidth = 1
-        self.SetPointAngle = 0
-        
-        self.SensorErrorRow = 7
-        self.SensorErrorWidth = 1
-        self.SetPointError = (self.CameraWidth * self.SensorErrorWidth) // 2
-        
+
+    def InitPID(self):
         self.KpBaseSpeed = 0.05
         self.KdBaseSpeed = 0.001
         self.PreviousAngle = 0
@@ -53,7 +65,8 @@ class LineFollower:
         self.KdDeltaSpeed = 0.0045
         self.IntegralError = 0
         self.PreviousError = 0
-        
+
+    def InitFuzzy(self):
         Error = ctrl.Antecedent(np.arange(-320, 321, 1), 'Error')
         DeltaError = ctrl.Antecedent(np.arange(-320, 321, 1), 'DeltaError')
         DeltaSpeed = ctrl.Consequent(np.arange(-15, 16, 1), 'DeltaSpeed')
@@ -114,10 +127,12 @@ class LineFollower:
             Rule21, Rule22, Rule23, Rule24, Rule25
         ])
         self.DeltaSpeedSim = ctrl.ControlSystemSimulation(DeltaSpeedControl)
-        
+
+    def InitLearning(self):
         self.BaseSpeedModel = joblib.load('BaseSpeedModel.pkl')
         self.DeltaSpeedModel = joblib.load('DeltaSpeedModel.pkl')
-        
+
+    def InitCSV(self):
         self.FileName = 'output.csv'
         if os.path.exists(self.FileName):
             os.remove(self.FileName)
@@ -126,8 +141,14 @@ class LineFollower:
         
         with open(self.FileName, 'w', newline='') as csvfile:
             log_writer = csv.writer(csvfile)
-            log_writer.writerow(['TimeStep', 'SetPointAngle', 'Angle', 'BaseSpeed', 'SetPointError', 'Error', 'DeltaError', 'DeltaSpeed', 'LeftSpeed', 'RightSpeed', 'X', 'Y', 'Z', 'Roll', 'Pitch', 'Yaw'])
+            log_writer.writerow(['Time', 
+                                 'SetPointAngle', 'SensorAngleRow', 'SensorAngleWidth', 'Angle', 'DeltaAngle', 'BaseSpeed', 
+                                 'SetPointError', 'SensorErrorRow', 'SensorErrorWidth', 'Error', 'DeltaError', 'DeltaSpeed', 
+                                 'LeftSpeed', 'RightSpeed', 
+                                 'X', 'Y', 'Z', 
+                                 'Roll', 'Pitch', 'Yaw'])
 
+    def InitRecording(self):
         self.VideoFileName = 'output.avi'
         self.VideoOut = cv2.VideoWriter(self.VideoFileName,  cv2.VideoWriter_fourcc(*'MJPG'), 30, (self.CameraWidth, self.CameraHeight)) 
 
@@ -137,7 +158,9 @@ class LineFollower:
         CameraImage = cv2.cvtColor(CameraImage, cv2.COLOR_BGRA2BGR)
         return CameraImage
 
-    def GetReference(self, CameraImage, SensorRow, SensorWidth, drawDot=False, drawBox=False):
+    def GetReference(self, CameraImage, SensorConfig, drawDot=False, drawBox=False):
+        SensorRow = SensorConfig[1]
+        SensorWidth = SensorConfig[2] 
         VerticalStart = int(self.CameraWidth * ((1-SensorWidth)/2))
         VerticalEnd = int(self.CameraWidth - self.CameraWidth * ((1-SensorWidth)/2))
         HorizontalStart = self.RowHeight * SensorRow
@@ -163,9 +186,12 @@ class LineFollower:
         else:
             RoiCx = 0
             RoiCy = 0
-        return CameraImage, RoiDetected, RoiCx, RoiCy    
+        ReferenceValue = [RoiDetected, RoiCx, RoiCy]
+        return CameraImage, ReferenceValue
 
-    def GetError(self, CameraImage, RoiDetectedError, RoiCxError, drawLine=False):
+    def GetError(self, CameraImage, ReferenceValue, drawLine=False):
+        RoiDetectedError = ReferenceValue[0]
+        RoiCxError = ReferenceValue[1]
         Error = self.PreviousError
         if RoiDetectedError:
             Error = RoiCxError - self.SetPointError
@@ -173,23 +199,26 @@ class LineFollower:
             cv2.line(CameraImage, (self.CameraWidth // 2, 0), (self.CameraWidth // 2, self.CameraHeight), (0, 0, 255), 1)
         return Error
 
-    def GetAngle(self, CameraImage, 
-                 RoiDetectedError, RoiDetectedAngle, 
-                 SensorAngleWidth, SensorErrorWidth,
-                 RoiCxAngle, RoiCxError, 
-                 SensorAngleRow, SensorErrorRow, 
-                 RoiCyAngle, RoiCyError, 
-                 drawDot=False, drawLine=False):
+    def GetAngle(self, CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=False, drawLine=False):
+        
+        RoiDetectedError = ReferenceValueError[0]
+        RoiCxError = ReferenceValueError[1]
+        RoiCyError = ReferenceValueError[2]
+        
+        RoiDetectedAngle = ReferenceValueAngle[0]
+        RoiCxAngle = ReferenceValueAngle[1]
+        RoiCyAngle = ReferenceValueAngle[2]
+        
         Angle = 75   
         if RoiDetectedError and RoiDetectedAngle:
             FirstPointCx = int(RoiCxError - self.SetPointError + (self.CameraWidth / 2))
-            FirstPointCy = int(self.RowHeight * SensorAngleRow + RoiCyAngle)
+            FirstPointCy = int(self.RowHeight * self.SensorAngle[1] + RoiCyAngle)
             
             SecondPointCx = int(RoiCxError - self.SetPointError + (self.CameraWidth / 2))
-            SecondPointCy = int(self.RowHeight * SensorErrorRow + RoiCyError)
+            SecondPointCy = int(self.RowHeight * self.SensorError[1] + RoiCyError)
             
-            ThirdPointCx = int((RoiCxAngle - (self.CameraWidth * SensorErrorWidth) // 2) + (self.CameraWidth / 2))
-            ThirdPointCy = int(self.RowHeight * SensorAngleRow + RoiCyAngle)
+            ThirdPointCx = int((RoiCxAngle - (self.CameraWidth * self.SensorError[2]) // 2) + (self.CameraWidth / 2))
+            ThirdPointCy = int(self.RowHeight * self.SensorAngle[1] + RoiCyAngle)
             
             PointA = np.array([FirstPointCx, FirstPointCy])
             PointB = np.array([SecondPointCx, SecondPointCy])
@@ -272,10 +301,26 @@ class LineFollower:
         Orientation = self.IMU.getValues()
         return Orientation
         
-    def LogData(self, FileName, TimeStep, SetPointAngle, Angle, BaseSpeed, SetPointError, Error, DeltaError, DeltaSpeed, LeftSpeed, RightSpeed, X, Y, Z, Roll, Pitch, Yaw):
+    def LogData(self, FileName, Time, SensorAngle, Angle, DeltaAngle, BaseSpeed, SensorError, Error, DeltaError, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation):
         with open(FileName, 'a', newline='') as csvfile:
             log_writer = csv.writer(csvfile)
-            log_writer.writerow([TimeStep, SetPointAngle, Angle, BaseSpeed, SetPointError, Error, DeltaError, DeltaSpeed, LeftSpeed, RightSpeed, X, Y, Z, Roll, Pitch, Yaw])
+            SetPointAngle = SensorAngle[0]
+            SensorAngleRow = SensorAngle[1]
+            SensorAngleWidth = SensorAngle[2]
+            SetPointError = SensorError[0]
+            SensorErrorRow = SensorError[1]
+            SensorErrorWidth = SensorError[2]
+            X = Position[0]
+            Y = Position[1]
+            Z = Position[2]
+            Roll = Orientation[0]
+            Pitch = Orientation[1]
+            Yaw = Orientation[2]
+            log_writer.writerow([Time, 
+                                SetPointAngle, SensorAngleRow, SensorAngleWidth, Angle, DeltaAngle, BaseSpeed, 
+                                SetPointError, SensorErrorRow, SensorErrorWidth, Error, DeltaError, DeltaSpeed, 
+                                LeftSpeed, RightSpeed, 
+                                X, Y, Z, Roll, Pitch, Yaw])
 
     def run(self):
         while self.Robot.step(self.TimeStep) != -1:
@@ -283,35 +328,27 @@ class LineFollower:
             
             Position = self.ReadGPS()
             Orientation = self.ReadIMU()
-            
             CameraImage = self.ReadCamera()
-            CameraImage, RoiDetectedAngle, RoiCxAngle, RoiCyAngle = self.GetReference(CameraImage, self.SensorAngleRow, self.SensorAngleWidth, drawDot=True, drawBox=True)
-            CameraImage, RoiDetectedError, RoiCxError, RoiCyError = self.GetReference(CameraImage, self.SensorErrorRow, self.SensorErrorWidth, drawDot=True, drawBox=True)
-
-            Error = self.GetError(CameraImage, RoiDetectedError, RoiCxError, drawLine=True)
-            Angle = self.GetAngle(CameraImage, RoiDetectedError, RoiDetectedAngle, 
-                                  self.SensorAngleWidth, self.SensorErrorWidth,
-                                  RoiCxAngle, RoiCxError, 
-                                  self.SensorAngleRow, self.SensorErrorRow, 
-                                  RoiCyAngle, RoiCyError, 
-                                  drawDot=True, drawLine=True)
             
-            DeltaAngle, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'Learning')
-            #BaseSpeed = 3.0
-            DeltaError, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'Learning')
+            CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
+            CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+
+            Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
+            Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
+            
+            DeltaAngle, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID')
+            DeltaError, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'PID')            
+            LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
             
             print(f"Angle: {Angle:+06.2f}, DeltaAngle: {DeltaAngle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
             
-            LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
-                        
             self.LogData(self.FileName, Time, 
-                         self.SetPointAngle, Angle, BaseSpeed, 
-                         self.SetPointError, Error, DeltaError, 
-                         DeltaSpeed, LeftSpeed, RightSpeed, 
-                         Position[0], Position[1], Position[2],
-                         Orientation[0], Orientation[1], Orientation[2])
+                         self.SensorAngle, Angle, DeltaAngle, BaseSpeed, 
+                         self.SensorError, Error, DeltaError, DeltaSpeed, 
+                         LeftSpeed, RightSpeed, 
+                         Position, Orientation)
 
-            self.ShowCamera(CameraImage, Show=True, Saved=False)
+            #self.ShowCamera(CameraImage, Show=True, Saved=False)
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
