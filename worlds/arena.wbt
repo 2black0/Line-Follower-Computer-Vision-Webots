@@ -9,7 +9,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
-  position 0.2610445178260442 0.40008951738036685 1.0551240210485666
+  position 0.36104401146772136 0.40008901102061206 1.2880006027292803
   follow "e-puck"
 }
 TexturedBackground {
@@ -31,7 +31,7 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation 0.260682 0.401 -6.3964e-05
+  translation 0.360682 0.401 -6.3964e-05
   rotation -6.3977e-10 -2.42653e-09 1 3.14159
   children [
     DEF EPUCK_GPS GPS {
