@@ -2,11 +2,14 @@ import os
 import csv
 import cv2
 import joblib
+import psutil
+import time
 import pandas as pd
 import numpy as np
 import skfuzzy as fuzz
 from controller import Robot
 from skfuzzy import control as ctrl
+from memory_profiler import memory_usage
 
 class LineFollower:
     def __init__(self): 
@@ -18,7 +21,7 @@ class LineFollower:
         self.InitPID()
         self.InitFuzzy()
         self.InitLearning()
-        self.InitCSV()
+        #self.InitCSV()
         #self.InitRecording()
 
     def InitSensor(self):
@@ -45,6 +48,9 @@ class LineFollower:
         SensorErrorWidth = 1
         SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
         self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
+        
+        self.StartPosition = None
+        self.MovingStatus = False
 
     def InitMotor(self):
         self.LeftMotor = self.Robot.getDevice('left wheel motor')
@@ -387,6 +393,22 @@ class LineFollower:
         Pitch = Orientation[1]
         Yaw = Orientation[2]
         print(f"Angle: {Angle:+06.2f}, DeltaAngle: {DeltaAngle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+    
+    def Finish(self, Position):
+        if self.StartPosition is None:
+            self.StartPosition = Position
+        
+        DistanceToStart = ((Position[0] - self.StartPosition[0]) ** 2 +
+                           (Position[1] - self.StartPosition[1]) ** 2 +
+                           (Position[2] - self.StartPosition[2]) ** 2) ** 0.5
+        
+        if DistanceToStart > 0.05:
+            self.MovingStatus = True
+        
+        if self.MovingStatus and DistanceToStart < 0.01:
+            return True
+        else:
+            return False              
             
     def run(self):
         while self.Robot.step(self.TimeStep) != -1:
@@ -396,20 +418,47 @@ class LineFollower:
             Orientation = self.ReadIMU()
             CameraImage = self.ReadCamera()
             
+            FinishStatus = self.Finish(Position)
+            
             CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
             CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
 
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'NeuralNetworks') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
-            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'NeuralNetworks') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
-            LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'Fuzzy') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
+            
+            if FinishStatus:
+                LeftSpeed, RightSpeed = self.MotorAction(0, 0)
+                break
+            else:
+                LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)          
             
             #self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
-            self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            #self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             #self.ShowCamera(CameraImage, Show=True, Saved=False)
+
+    def MeasurePerfomance(self):
+        def RunMethod():
+            self.run()
+
+        StartTime = time.time()
+        MemoryUsage = memory_usage((RunMethod,))
+        CPUBeforeLoad = psutil.cpu_percent(interval=1)
+        RunMethod()
+        CPUAfterLoad = psutil.cpu_percent(interval=1)
+        EndTime = time.time()
+        
+        ExecutionTime = EndTime - StartTime
+        MemoryUsageDiff = max(MemoryUsage) - min(MemoryUsage)
+        CPULoad = (CPUBeforeLoad + CPUAfterLoad) / 2
+        
+        return ExecutionTime, MemoryUsageDiff, CPULoad
+
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
-    LineFollower.run()
+    #LineFollower.run()
+    ExecutionTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
+    print(f"ExecutionTime: {ExecutionTime} seconds, Memory: {MemoryUsageDiff} MiB, CPU Load: {CPULoad}%")
