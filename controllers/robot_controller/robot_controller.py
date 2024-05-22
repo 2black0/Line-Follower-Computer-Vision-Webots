@@ -19,7 +19,7 @@ class LineFollower:
         self.InitFuzzy()
         self.InitLearning()
         #self.InitCSV()
-        self.InitRecording()
+        #self.InitRecording()
 
     def InitSensor(self):
         self.Camera = self.Robot.getDevice('camera')
@@ -266,13 +266,24 @@ class LineFollower:
     def CalculateBaseSpeed(self, Angle, MaxSpeed, Control='PID'):
         DeltaAngle = Angle - self.PreviousAngle
         self.IntegralAngle += Angle
+        BaseSpeedData = pd.DataFrame({
+                'Angle': [Angle],
+                'DeltaAngle': DeltaAngle
+            })
         if Control == 'PID':
             BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
-        elif Control == 'Learning':
-            BaseSpeedData = pd.DataFrame({
-                'Angle': [Angle]
-            })
-            BaseSpeed = self.BaseSpeedModel.predict(BaseSpeedData)[0]
+        elif Control == 'DecisionTree':
+            BaseSpeed = self.DeltaSpeedDecisionTree.predict(BaseSpeedData)[0]
+        elif Control == 'GradientBoosting':
+            BaseSpeed = self.DeltaSpeedGradientBoosting.predict(BaseSpeedData)[0]
+        elif Control == 'LinierRegression':
+            BaseSpeed = self.DeltaSpeedLinierRegression.predict(BaseSpeedData)[0]
+        elif Control == 'NeuralNetworks':
+            BaseSpeed = self.DeltaSpeedNeuralNetworks.predict(BaseSpeedData)[0]
+        elif Control == 'RandomForests':
+            BaseSpeed = self.DeltaSpeedRandomForests.predict(BaseSpeedData)[0]
+        elif Control == 'SupportVector':
+            BaseSpeed = self.DeltaSpeedSupportVector.predict(BaseSpeedData)[0]
         self.PreviousAngle = Angle
         AngleValue = [Angle, self.IntegralAngle, DeltaAngle]
         return AngleValue, BaseSpeed
@@ -280,6 +291,11 @@ class LineFollower:
     def CalculateDeltaSpeed(self, Error, DeltaSpeed, Control='PID'):
         DeltaError = Error - self.PreviousError
         self.IntegralError += Error
+        DeltaSpeedData = pd.DataFrame({
+                'Error': [Error],
+                'IntegralError': self.IntegralError,
+                'DeltaError': [DeltaError]
+            })
         if Control == 'PID':
             DeltaSpeed = (self.KpDeltaSpeed * Error) + (self.KiDeltaSpeed * self.IntegralError) + (self.KdDeltaSpeed * DeltaError)
         elif Control == "Fuzzy":
@@ -287,13 +303,19 @@ class LineFollower:
             DeltaError = max(min(DeltaError, 320), -320)
             self.DeltaSpeedSim.input['Error'] = Error
             self.DeltaSpeedSim.input['DeltaError'] = DeltaError
-            self.DeltaSpeedSim.compute()
-        elif Control == 'Learning':
-            DeltaSpeedData = pd.DataFrame({
-                'Error': [Error],
-                'DeltaError': [DeltaError]
-            })
-            DeltaSpeed = self.DeltaSpeedModel.predict(DeltaSpeedData)[0]
+            self.DeltaSpeedSim.compute() 
+        elif Control == 'DecisionTree': 
+            DeltaSpeed = self.DeltaSpeedDecisionTree.predict(DeltaSpeedData)[0]
+        elif Control == 'GradientBoosting':
+            DeltaSpeed = self.DeltaSpeedGradientBoosting.predict(DeltaSpeedData)[0]
+        elif Control == 'LinierRegression':
+            DeltaSpeed = self.DeltaSpeedLinierRegression.predict(DeltaSpeedData)[0]
+        elif Control == 'NeuralNetworks':
+            DeltaSpeed = self.DeltaSpeedNeuralNetworks.predict(DeltaSpeedData)[0]
+        elif Control == 'RandomForests':
+            DeltaSpeed = self.DeltaSpeedRandomForests.predict(DeltaSpeedData)[0]
+        elif Control == 'SupportVector':
+            DeltaSpeed = self.DeltaSpeedSupportVector.predict(DeltaSpeedData)[0]
         self.PreviousError = Error
         ErrorValue = [Error, self.IntegralError, DeltaError]
         return ErrorValue, DeltaSpeed
@@ -380,8 +402,8 @@ class LineFollower:
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID') #PID, Learning
-            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'PID') #PID, Fuzzy, Learning             
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'LinierRegression') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'GradientBoosting') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
             
             #self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
