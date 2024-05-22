@@ -133,19 +133,19 @@ class LineFollower:
         self.BaseSpeedModel = joblib.load('BaseSpeedModel.pkl')
         self.DeltaSpeedModel = joblib.load('DeltaSpeedModel.pkl')
         
-        self.BaseSpeedDecisionTree = joblib.load('Config1_BaseSpeed_Decision_Trees.joblib')
-        self.BaseSpeedGradientBoosting = joblib.load('Config1_BaseSpeed_Gradient_Boosting_Machines.joblib')
-        self.BaseSpeedLinierRegression = joblib.load('Config1_BaseSpeed_Linear_Regression.joblib')
-        self.BaseSpeedNeuralNetworks = joblib.load('Config1_BaseSpeed_Neural_Networks.joblib')
-        self.BaseSpeedRandomForests = joblib.load('Config1_BaseSpeed_Random_Forests.joblib')
-        self.BaseSpeedSupportVector = joblib.load('Config1_BaseSpeed_Support_Vector_Machines.joblib')
+        self.BaseSpeedDecisionTree = joblib.load('BaseSpeedDecisionTree.joblib')
+        self.BaseSpeedGradientBoosting = joblib.load('BaseSpeedGradientBoosting.joblib')
+        self.BaseSpeedLinierRegression = joblib.load('BaseSpeedLinearRegression.joblib')
+        self.BaseSpeedNeuralNetworks = joblib.load('BaseSpeedNeuralNetwork.joblib')
+        self.BaseSpeedRandomForests = joblib.load('BaseSpeedRandomForest.joblib')
+        self.BaseSpeedSupportVector = joblib.load('BaseSpeedSupportVectorMachine.joblib')
         
-        self.DeltaSpeedDecisionTree = joblib.load('Config2_DeltaSpeed_Decision_Trees.joblib')
-        self.DeltaSpeedGradientBoosting = joblib.load('Config2_DeltaSpeed_Gradient_Boosting_Machines.joblib')
-        self.DeltaSpeedLinierRegression = joblib.load('Config2_DeltaSpeed_Linear_Regression.joblib')
-        self.DeltaSpeedNeuralNetworks = joblib.load('Config2_DeltaSpeed_Neural_Networks.joblib')
-        self.DeltaSpeedRandomForests = joblib.load('Config2_DeltaSpeed_Random_Forests.joblib')
-        self.DeltaSpeedSupportVector = joblib.load('Config2_DeltaSpeed_Support_Vector_Machines.joblib')
+        self.DeltaSpeedDecisionTree = joblib.load('DeltaSpeedDecisionTree.joblib')
+        self.DeltaSpeedGradientBoosting = joblib.load('DeltaSpeedGradientBoosting.joblib')
+        self.DeltaSpeedLinierRegression = joblib.load('DeltaSpeedLinearRegression.joblib')
+        self.DeltaSpeedNeuralNetworks = joblib.load('DeltaSpeedNeuralNetwork.joblib')
+        self.DeltaSpeedRandomForests = joblib.load('DeltaSpeedRandomForest.joblib')
+        self.DeltaSpeedSupportVector = joblib.load('DeltaSpeedSupportVectorMachine.joblib')
 
     def InitCSV(self):
         self.FileName = 'output.csv'
@@ -273,17 +273,17 @@ class LineFollower:
         if Control == 'PID':
             BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
         elif Control == 'DecisionTree':
-            BaseSpeed = self.DeltaSpeedDecisionTree.predict(BaseSpeedData)[0]
+            BaseSpeed = self.BaseSpeedDecisionTree.predict(BaseSpeedData)[0]
         elif Control == 'GradientBoosting':
-            BaseSpeed = self.DeltaSpeedGradientBoosting.predict(BaseSpeedData)[0]
+            BaseSpeed = self.BaseSpeedGradientBoosting.predict(BaseSpeedData)[0]
         elif Control == 'LinierRegression':
-            BaseSpeed = self.DeltaSpeedLinierRegression.predict(BaseSpeedData)[0]
+            BaseSpeed = self.BaseSpeedLinierRegression.predict(BaseSpeedData)[0]
         elif Control == 'NeuralNetworks':
-            BaseSpeed = self.DeltaSpeedNeuralNetworks.predict(BaseSpeedData)[0]
+            BaseSpeed = self.BaseSpeedNeuralNetworks.predict(BaseSpeedData)[0]
         elif Control == 'RandomForests':
-            BaseSpeed = self.DeltaSpeedRandomForests.predict(BaseSpeedData)[0]
+            BaseSpeed = self.BaseSpeedRandomForests.predict(BaseSpeedData)[0]
         elif Control == 'SupportVector':
-            BaseSpeed = self.DeltaSpeedSupportVector.predict(BaseSpeedData)[0]
+            BaseSpeed = self.BaseSpeedSupportVector.predict(BaseSpeedData)[0]
         self.PreviousAngle = Angle
         AngleValue = [Angle, self.IntegralAngle, DeltaAngle]
         return AngleValue, BaseSpeed
@@ -402,8 +402,8 @@ class LineFollower:
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
-            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'PID') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'NeuralNetworks') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'NeuralNetworks') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
             
             #self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
