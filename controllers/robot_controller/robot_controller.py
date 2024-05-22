@@ -18,7 +18,7 @@ class LineFollower:
         self.InitPID()
         self.InitFuzzy()
         self.InitLearning()
-        #self.InitCSV()
+        self.InitCSV()
         #self.InitRecording()
 
     def InitSensor(self):
@@ -402,12 +402,12 @@ class LineFollower:
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'LinierRegression') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
-            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'GradientBoosting') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'PID') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)            
             
             #self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
-            #self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             #self.ShowCamera(CameraImage, Show=True, Saved=False)
 
 if __name__ == "__main__":
