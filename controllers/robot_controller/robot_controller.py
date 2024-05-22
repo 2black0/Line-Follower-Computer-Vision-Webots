@@ -18,7 +18,7 @@ class LineFollower:
         self.InitPID()
         self.InitFuzzy()
         self.InitLearning()
-        self.InitCSV()
+        #self.InitCSV()
         self.InitRecording()
 
     def InitSensor(self):
@@ -132,6 +132,20 @@ class LineFollower:
     def InitLearning(self):
         self.BaseSpeedModel = joblib.load('BaseSpeedModel.pkl')
         self.DeltaSpeedModel = joblib.load('DeltaSpeedModel.pkl')
+        
+        self.BaseSpeedDecisionTree = joblib.load('Config1_BaseSpeed_Decision_Trees.joblib')
+        self.BaseSpeedGradientBoosting = joblib.load('Config1_BaseSpeed_Gradient_Boosting_Machines.joblib')
+        self.BaseSpeedLinierRegression = joblib.load('Config1_BaseSpeed_Linear_Regression.joblib')
+        self.BaseSpeedNeuralNetworks = joblib.load('Config1_BaseSpeed_Neural_Networks.joblib')
+        self.BaseSpeedRandomForests = joblib.load('Config1_BaseSpeed_Random_Forests.joblib')
+        self.BaseSpeedSupportVector = joblib.load('Config1_BaseSpeed_Support_Vector_Machines.joblib')
+        
+        self.DeltaSpeedDecisionTree = joblib.load('Config2_DeltaSpeed_Decision_Trees.joblib')
+        self.DeltaSpeedGradientBoosting = joblib.load('Config2_DeltaSpeed_Gradient_Boosting_Machines.joblib')
+        self.DeltaSpeedLinierRegression = joblib.load('Config2_DeltaSpeed_Linear_Regression.joblib')
+        self.DeltaSpeedNeuralNetworks = joblib.load('Config2_DeltaSpeed_Neural_Networks.joblib')
+        self.DeltaSpeedRandomForests = joblib.load('Config2_DeltaSpeed_Random_Forests.joblib')
+        self.DeltaSpeedSupportVector = joblib.load('Config2_DeltaSpeed_Support_Vector_Machines.joblib')
 
     def InitCSV(self):
         self.FileName = 'output.csv'
