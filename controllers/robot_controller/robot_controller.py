@@ -292,7 +292,7 @@ class LineFollower:
             BaseSpeed = self.BaseSpeedSupportVector.predict(BaseSpeedData)[0]
         self.PreviousAngle = Angle
         AngleValue = [Angle, self.IntegralAngle, DeltaAngle]
-        return AngleValue, BaseSpeed
+        return AngleValue, BaseSpeed, Control
 
     def CalculateDeltaSpeed(self, Error, DeltaSpeed, Control='PID'):
         DeltaError = Error - self.PreviousError
@@ -324,7 +324,7 @@ class LineFollower:
             DeltaSpeed = self.DeltaSpeedSupportVector.predict(DeltaSpeedData)[0]
         self.PreviousError = Error
         ErrorValue = [Error, self.IntegralError, DeltaError]
-        return ErrorValue, DeltaSpeed
+        return ErrorValue, DeltaSpeed, Control
   
     def MotorAction(self, BaseSpeed, DeltaSpeed):
         LeftSpeed = max(min(BaseSpeed + DeltaSpeed, self.MaxVelocity), -self.MaxVelocity)
@@ -410,7 +410,7 @@ class LineFollower:
         else:
             return False              
             
-    def run(self):
+    def run(self, BaseControl='PID', DeltaControl='PID'):
         while self.Robot.step(self.TimeStep) != -1:
             Time = self.Robot.getTime()
             
@@ -426,8 +426,8 @@ class LineFollower:
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28, 'PID') #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
-            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error, 'Fuzzy') #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector             
+            AngleValue, BaseSpeed, Control = self.CalculateBaseSpeed(Angle, 6.28, BaseControl) 
+            ErrorValue, DeltaSpeed, Control = self.CalculateDeltaSpeed(Error, DeltaControl)            
             
             if FinishStatus:
                 LeftSpeed, RightSpeed = self.MotorAction(0, 0)
@@ -440,25 +440,26 @@ class LineFollower:
             #self.ShowCamera(CameraImage, Show=True, Saved=False)
 
     def MeasurePerfomance(self):
+        BaseControl = 'SupportVector' #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
+        DeltaControl = 'SupportVector' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
         def RunMethod():
-            self.run()
+            self.run(BaseControl, DeltaControl)
 
-        StartTime = time.time()
+        StartTime = time.time() #self.Robot.getTime()#
         MemoryUsage = memory_usage((RunMethod,))
         CPUBeforeLoad = psutil.cpu_percent(interval=1)
         RunMethod()
         CPUAfterLoad = psutil.cpu_percent(interval=1)
-        EndTime = time.time()
+        EndTime = time.time() #self.Robot.getTime()#
         
         ExecutionTime = EndTime - StartTime
         MemoryUsageDiff = max(MemoryUsage) - min(MemoryUsage)
         CPULoad = (CPUBeforeLoad + CPUAfterLoad) / 2
         
-        return ExecutionTime, MemoryUsageDiff, CPULoad
-
+        return BaseControl, DeltaControl, ExecutionTime, MemoryUsageDiff, CPULoad
 
 if __name__ == "__main__":
     LineFollower = LineFollower()
     #LineFollower.run()
-    ExecutionTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
-    print(f"ExecutionTime: {ExecutionTime} seconds, Memory: {MemoryUsageDiff} MiB, CPU Load: {CPULoad}%")
+    BaseControl, DeltaControl, ExecutionTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
+    print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime} seconds, Memory: {MemoryUsageDiff} MiB, CPU Load: {CPULoad}%")
