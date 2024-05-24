@@ -12,7 +12,7 @@ from skfuzzy import control as ctrl
 from memory_profiler import memory_usage
 
 class LineFollower:
-    def __init__(self): 
+    def __init__(self, Log=False, Camera=False): 
         self.Robot = Robot()
         self.TimeStep = int(self.Robot.getBasicTimeStep())
         
@@ -21,8 +21,12 @@ class LineFollower:
         self.InitPID()
         self.InitFuzzy()
         self.InitLearning()
-        #self.InitCSV()
-        #self.InitRecording()
+        self.LogStatus = Log
+        if self.LogStatus:
+            self.InitCSV()
+        self.CameraStatus = Camera
+        if self.CameraStatus:
+            self.InitRecording()
 
     def InitSensor(self):
         self.Camera = self.Robot.getDevice('camera')
@@ -136,22 +140,22 @@ class LineFollower:
         self.DeltaSpeedSim = ctrl.ControlSystemSimulation(DeltaSpeedControl)
 
     def InitLearning(self):
-        self.BaseSpeedModel = joblib.load('BaseSpeedModel.pkl')
-        self.DeltaSpeedModel = joblib.load('DeltaSpeedModel.pkl')
+        #self.BaseSpeedModel = joblib.load('BaseSpeedModel.pkl')
+        #self.DeltaSpeedModel = joblib.load('DeltaSpeedModel.pkl')
+
+        self.BaseSpeedDecisionTree = joblib.load('model/BaseSpeedDecisionTree.joblib')
+        self.BaseSpeedGradientBoosting = joblib.load('model/BaseSpeedGradientBoosting.joblib')
+        self.BaseSpeedLinierRegression = joblib.load('model/BaseSpeedLinearRegression.joblib')
+        self.BaseSpeedNeuralNetworks = joblib.load('model/BaseSpeedNeuralNetwork.joblib')
+        self.BaseSpeedRandomForests = joblib.load('model/BaseSpeedRandomForest.joblib')
+        self.BaseSpeedSupportVector = joblib.load('model/BaseSpeedSupportVectorMachine.joblib')
         
-        self.BaseSpeedDecisionTree = joblib.load('BaseSpeedDecisionTree.joblib')
-        self.BaseSpeedGradientBoosting = joblib.load('BaseSpeedGradientBoosting.joblib')
-        self.BaseSpeedLinierRegression = joblib.load('BaseSpeedLinearRegression.joblib')
-        self.BaseSpeedNeuralNetworks = joblib.load('BaseSpeedNeuralNetwork.joblib')
-        self.BaseSpeedRandomForests = joblib.load('BaseSpeedRandomForest.joblib')
-        self.BaseSpeedSupportVector = joblib.load('BaseSpeedSupportVectorMachine.joblib')
-        
-        self.DeltaSpeedDecisionTree = joblib.load('DeltaSpeedDecisionTree.joblib')
-        self.DeltaSpeedGradientBoosting = joblib.load('DeltaSpeedGradientBoosting.joblib')
-        self.DeltaSpeedLinierRegression = joblib.load('DeltaSpeedLinearRegression.joblib')
-        self.DeltaSpeedNeuralNetworks = joblib.load('DeltaSpeedNeuralNetwork.joblib')
-        self.DeltaSpeedRandomForests = joblib.load('DeltaSpeedRandomForest.joblib')
-        self.DeltaSpeedSupportVector = joblib.load('DeltaSpeedSupportVectorMachine.joblib')
+        self.DeltaSpeedDecisionTree = joblib.load('model/DeltaSpeedDecisionTree.joblib')
+        self.DeltaSpeedGradientBoosting = joblib.load('model/DeltaSpeedGradientBoosting.joblib')
+        self.DeltaSpeedLinierRegression = joblib.load('model/DeltaSpeedLinearRegression.joblib')
+        self.DeltaSpeedNeuralNetworks = joblib.load('model/DeltaSpeedNeuralNetwork.joblib')
+        self.DeltaSpeedRandomForests = joblib.load('model/DeltaSpeedRandomForest.joblib')
+        self.DeltaSpeedSupportVector = joblib.load('model/DeltaSpeedSupportVectorMachine.joblib')
 
     def InitCSV(self):
         self.FileName = 'output.csv'
@@ -260,11 +264,10 @@ class LineFollower:
                 cv2.line(CameraImage, PointB, PointC, (0, 255, 0), 2)
         return Angle
 
-    def ShowCamera(self, CameraImage, Show=False, Saved=False):
+    def ShowCamera(self, CameraImage, CameraSaved=False):
         ImageResize = cv2.resize(CameraImage, (320, 240), interpolation=cv2.INTER_LINEAR)
-        if Show:
-            cv2.imshow("Camera Image from e-puck", ImageResize)
-        if Saved:
+        cv2.imshow("Camera Image from e-puck", ImageResize)
+        if CameraSaved:
             self.VideoOut.write(ImageResize)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.cleanup()
@@ -402,7 +405,7 @@ class LineFollower:
                            (Position[1] - self.StartPosition[1]) ** 2 +
                            (Position[2] - self.StartPosition[2]) ** 2) ** 0.5
         
-        if DistanceToStart > 0.05:
+        if DistanceToStart > 0.01:
             self.MovingStatus = True
         
         if self.MovingStatus and DistanceToStart < 0.01:
@@ -410,7 +413,7 @@ class LineFollower:
         else:
             return False              
             
-    def run(self, BaseControl='PID', DeltaControl='PID'):
+    def run(self, BaseControl='PID', DeltaControl='PID', Print=False, CameraSaved=False):
         while self.Robot.step(self.TimeStep) != -1:
             Time = self.Robot.getTime()
             
@@ -419,7 +422,7 @@ class LineFollower:
             CameraImage = self.ReadCamera()
             
             FinishStatus = self.Finish(Position)
-            
+
             CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
             CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
 
@@ -429,37 +432,48 @@ class LineFollower:
             AngleValue, BaseSpeed, Control = self.CalculateBaseSpeed(Angle, 6.28, BaseControl) 
             ErrorValue, DeltaSpeed, Control = self.CalculateDeltaSpeed(Error, DeltaControl)            
             
+            #LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
+            
             if FinishStatus:
                 LeftSpeed, RightSpeed = self.MotorAction(0, 0)
                 break
             else:
-                LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)          
+                LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
             
-            #self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
-            #self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
-            #self.ShowCamera(CameraImage, Show=True, Saved=False)
+            if Print:
+                self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            if self.LogStatus:
+                self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            if self.CameraStatus:
+                self.ShowCamera(CameraImage, CameraSaved=False)
 
     def MeasurePerfomance(self):
-        BaseControl = 'SupportVector' #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
-        DeltaControl = 'SupportVector' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+        BaseControl = 'NeuralNetworks' #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
+        DeltaControl = 'NeuralNetworks' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+        Print = False
+        CameraSaved = False
+        
         def RunMethod():
-            self.run(BaseControl, DeltaControl)
+            self.run(BaseControl, DeltaControl, Print, CameraSaved)
 
-        StartTime = time.time() #self.Robot.getTime()#
+        StartTime = time.time()
+        SimulationStartTime = self.Robot.getTime()
         MemoryUsage = memory_usage((RunMethod,))
         CPUBeforeLoad = psutil.cpu_percent(interval=1)
         RunMethod()
         CPUAfterLoad = psutil.cpu_percent(interval=1)
-        EndTime = time.time() #self.Robot.getTime()#
+        EndTime = time.time()
+        SimulationEndTime = self.Robot.getTime()
         
         ExecutionTime = EndTime - StartTime
+        ExecutionSimulationTime = SimulationEndTime - SimulationStartTime
         MemoryUsageDiff = max(MemoryUsage) - min(MemoryUsage)
         CPULoad = (CPUBeforeLoad + CPUAfterLoad) / 2
         
-        return BaseControl, DeltaControl, ExecutionTime, MemoryUsageDiff, CPULoad
+        return BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad
 
 if __name__ == "__main__":
-    LineFollower = LineFollower()
-    #LineFollower.run()
-    BaseControl, DeltaControl, ExecutionTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
-    print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime} seconds, Memory: {MemoryUsageDiff} MiB, CPU Load: {CPULoad}%")
+    LineFollower = LineFollower(Log=False, Camera=False)
+    #LineFollower.run(BaseControl='PID', DeltaControl='PID', Print=True, CameraSaved=False)
+    BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
+    print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime:.3f} seconds, ExecutionSimulationTime: {ExecutionSimulationTime:.3f} seconds, Memory: {MemoryUsageDiff:.3f} MiB, CPU Load: {CPULoad:.3f}%")

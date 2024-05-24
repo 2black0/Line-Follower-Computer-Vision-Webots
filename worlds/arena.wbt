@@ -5,12 +5,13 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
 
 WorldInfo {
-  basicTimeStep 8
+  FPS 30
 }
 Viewpoint {
   orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
-  position 0.41977932650674066 0.4011483260690046 2.2150036982770556
+  position 0.2593210993173557 0.4108040937286155 0.4223005636054177
   follow "e-puck"
+  followType "None"
 }
 TexturedBackground {
 }
@@ -31,8 +32,8 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation 0.019414 0.402056 -6.3964e-05
-  rotation -6.39771e-10 -2.42653e-09 1 3.14159
+  translation 0.222948 0.402 -6.3964e-05
+  rotation -6.39768e-10 -2.42653e-09 1 3.14159
   children [
     DEF EPUCK_GPS GPS {
     }
