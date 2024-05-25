@@ -1,207 +1,479 @@
+import os
+import csv
 import cv2
+import joblib
+import psutil
+import time
+import pandas as pd
 import numpy as np
+import skfuzzy as fuzz
 from controller import Robot
-import math
+from skfuzzy import control as ctrl
+from memory_profiler import memory_usage
 
-class EPuckRobot:
-    def __init__(self, timestep=64):
-        self.robot = Robot()
-        self.timestep = timestep
-        self.camera = self.robot.getDevice('camera')
-        self.camera.enable(self.timestep)
-        self.width = self.camera.getWidth()
-        self.height = self.camera.getHeight()
+class LineFollower:
+    def __init__(self, Log=False, Camera=False): 
+        self.Robot = Robot()
+        self.TimeStep = int(self.Robot.getBasicTimeStep())
         
-        # Initialize motors
-        self.left_motor = self.robot.getDevice('left wheel motor')
-        self.right_motor = self.robot.getDevice('right wheel motor')
-        self.left_motor.setPosition(float('inf'))
-        self.right_motor.setPosition(float('inf'))
-        self.left_motor.setVelocity(0.0)
-        self.right_motor.setVelocity(0.0)
+        self.InitSensor()
+        self.InitMotor()        
+        self.InitPID()
+        self.InitFuzzy()
+        self.InitLearning()
+        self.LogStatus = Log
+        if self.LogStatus:
+            self.InitCSV()
+        self.CameraStatus = Camera
+        if self.CameraStatus:
+            self.InitRecording()
+
+    def InitSensor(self):
+        self.Camera = self.Robot.getDevice('camera')
+        self.Camera.enable(self.TimeStep)
+        self.CameraWidth = self.Camera.getWidth()
+        self.CameraHeight = self.Camera.getHeight()
         
-        # Motor parameters
-        self.max_velocity = 6.28  # Maximum velocity for e-puck motors
+        self.GPS = self.Robot.getDevice('gps')
+        self.GPS.enable(self.TimeStep)
+
+        self.IMU = self.Robot.getDevice('accelerometer')
+        self.IMU.enable(self.TimeStep)
         
-        # PID control parameters (fine-tuned)
-        self.kp = 0.06  # Proportional gain
-        self.ki = 0.015  # Integral gain
-        self.kd = 0.02  # Derivative gain
-        self.integral = 0
-        self.previous_error = 0
+        self.RowTotal = 12
+        self.RowHeight = int(self.CameraHeight / self.RowTotal)
         
-        # PID control parameters (fine-tuned)
-        self.kp_speed = 0.05  # Proportional gain
-        self.kd_speed = 0.005  # Derivative gain
-        self.previous_error_speed = 0
-
-    def run(self):
-        while self.robot.step(self.timestep) != -1:
-            self.process_camera_image()
-
-    def process_camera_image(self):
-        image = self.camera.getImage()
-        image = np.frombuffer(image, np.uint8).reshape((self.height, self.width, 4))
-        image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
-
-        # Draw a vertical line in the middle of the entire image
-        #cv2.line(image, (self.width // 2, 0), (self.width // 2, self.height), (0, 0, 255), 1)
-
-        # Define the region of interest (ROI) for line detection
-        second_roi_width = 320  # Reduced width
-        second_roi_height = 20  # Reduced height
+        SensorAngleRow = 4
+        SensorAngleWidth = 1
+        SetPointAngle = 0
+        self.SensorAngle = [SetPointAngle, SensorAngleRow, SensorAngleWidth] # SetPoint, Row, Width
         
-        second_vertical_start = 0
-        second_vertical_end = second_roi_width
-        second_horizontal_start = (self.height // 2) - 80
-        second_horizontal_end = second_horizontal_start + second_roi_height
-        second_roi = image[second_horizontal_start:second_horizontal_end, second_vertical_start:second_vertical_end]
+        SensorErrorRow = 7
+        SensorErrorWidth = 1
+        SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
+        self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
+        
+        self.StartPosition = None
+        self.MovingStatus = False
 
-        # Process the second ROI
-        second_gray_roi = cv2.cvtColor(second_roi, cv2.COLOR_BGR2GRAY)
-        _, second_thresholded_roi = cv2.threshold(second_gray_roi, 50, 255, cv2.THRESH_BINARY_INV)
+    def InitMotor(self):
+        self.LeftMotor = self.Robot.getDevice('left wheel motor')
+        self.RightMotor = self.Robot.getDevice('right wheel motor')
+        self.LeftMotor.setPosition(float('inf'))
+        self.RightMotor.setPosition(float('inf'))
+        self.LeftMotor.setVelocity(0.0)
+        self.RightMotor.setVelocity(0.0)
+        self.MaxVelocity = 6.28
 
-        # Calculate the moments of the binary image
-        second_moments = cv2.moments(second_thresholded_roi)
-        second_detected = False
-        if second_moments['m00'] != 0:
-            # Calculate the centroid of the black line in the ROI
-            second_cX = int(second_moments['m10'] / second_moments['m00'])
-            second_cY = int(second_moments['m01'] / second_moments['m00'])
+    def InitPID(self):
+        self.KpBaseSpeed = 0.05
+        self.KdBaseSpeed = 0.001
+        self.IntegralAngle = 0
+        self.PreviousAngle = 0
+        
+        self.KpDeltaSpeed = 0.05
+        self.KiDeltaSpeed = 0.005
+        self.KdDeltaSpeed = 0.0045
+        self.IntegralError = 0
+        self.PreviousError = 0
 
-            # Draw the centroid on the ROI
-            cv2.circle(second_roi, (second_cX, second_cY), 5, (0, 255, 0), -1)
-            second_detected = True
+    def InitFuzzy(self):
+        Error = ctrl.Antecedent(np.arange(-320, 321, 1), 'Error')
+        DeltaError = ctrl.Antecedent(np.arange(-320, 321, 1), 'DeltaError')
+        DeltaSpeed = ctrl.Consequent(np.arange(-15, 16, 1), 'DeltaSpeed')
 
-        # Replace the ROI in the original image
-        #image[second_horizontal_start:second_horizontal_end, second_vertical_start:second_vertical_end] = second_roi
+        Error['NL'] = fuzz.trimf(Error.universe, [-320, -320, -150])
+        Error['NS'] = fuzz.trimf(Error.universe, [-320, -150, 0])
+        Error['Z'] = fuzz.trimf(Error.universe, [-150, 0, 150])
+        Error['PS'] = fuzz.trimf(Error.universe, [0, 150, 320])
+        Error['PL'] = fuzz.trimf(Error.universe, [150, 320, 320])
 
-        # Define the region of interest (ROI) for line detection
-        first_roi_width = 55  # Reduced width
-        first_roi_height = 20  # Reduced height
-        first_vertical_start = (self.width - first_roi_width) // 2
-        first_vertical_end = first_vertical_start + first_roi_width
-        #first_horizontal_start = self.height - first_roi_height
-        first_horizontal_start = self.height - 55        
-        #first_horizontal_end = self.height
-        first_horizontal_end = first_horizontal_start + first_roi_height
-        first_roi = image[first_horizontal_start:first_horizontal_end, first_vertical_start:first_vertical_end]
+        DeltaError['NL'] = fuzz.trimf(DeltaError.universe, [-320, -320, -150])
+        DeltaError['NS'] = fuzz.trimf(DeltaError.universe, [-320, -150, 0])
+        DeltaError['Z'] = fuzz.trimf(DeltaError.universe, [-150, 0, 150])
+        DeltaError['PS'] = fuzz.trimf(DeltaError.universe, [0, 150, 320])
+        DeltaError['PL'] = fuzz.trimf(DeltaError.universe, [150, 320, 320])
 
-        # Process the first ROI
-        first_gray_roi = cv2.cvtColor(first_roi, cv2.COLOR_BGR2GRAY)
-        _, first_thresholded_roi = cv2.threshold(first_gray_roi, 50, 255, cv2.THRESH_BINARY_INV)
+        DeltaSpeed['DL'] = fuzz.trimf(DeltaSpeed.universe, [-15, -15, -10])
+        DeltaSpeed['DS'] = fuzz.trimf(DeltaSpeed.universe, [-15, -10, 0])
+        DeltaSpeed['NC'] = fuzz.trimf(DeltaSpeed.universe, [-10, 0, 10])
+        DeltaSpeed['IS'] = fuzz.trimf(DeltaSpeed.universe, [0, 10, 15])
+        DeltaSpeed['IL'] = fuzz.trimf(DeltaSpeed.universe, [10, 15, 15])
 
-        # Calculate the moments of the binary image
-        first_moments = cv2.moments(first_thresholded_roi)
-        first_detected = False
-        if first_moments['m00'] != 0:
-            # Calculate the centroid of the black line in the ROI
-            cX = int(first_moments['m10'] / first_moments['m00'])
-            cY = int(first_moments['m01'] / first_moments['m00'])
+        Rule1 = ctrl.Rule(Error['NL'] & DeltaError['NL'], DeltaSpeed['DL'])
+        Rule2 = ctrl.Rule(Error['NL'] & DeltaError['NS'], DeltaSpeed['DL'])
+        Rule3 = ctrl.Rule(Error['NL'] & DeltaError['Z'], DeltaSpeed['DL'])
+        Rule4 = ctrl.Rule(Error['NL'] & DeltaError['PS'], DeltaSpeed['DS'])
+        Rule5 = ctrl.Rule(Error['NL'] & DeltaError['PL'], DeltaSpeed['NC'])
 
-            # Draw the centroid on the ROI
-            cv2.circle(first_roi, (cX, cY), 5, (255, 0, 0), -1)
-            first_detected = True
+        Rule6 = ctrl.Rule(Error['NS'] & DeltaError['NL'], DeltaSpeed['DL'])
+        Rule7 = ctrl.Rule(Error['NS'] & DeltaError['NS'], DeltaSpeed['DS'])
+        Rule8 = ctrl.Rule(Error['NS'] & DeltaError['Z'], DeltaSpeed['DS'])
+        Rule9 = ctrl.Rule(Error['NS'] & DeltaError['PS'], DeltaSpeed['NC'])
+        Rule10 = ctrl.Rule(Error['NS'] & DeltaError['PL'], DeltaSpeed['IS'])
 
-            # Calculate the error: distance from the center of the ROI
-            error = cX - (first_roi_width // 2)
+        Rule11 = ctrl.Rule(Error['Z'] & DeltaError['NL'], DeltaSpeed['DS'])
+        Rule12 = ctrl.Rule(Error['Z'] & DeltaError['NS'], DeltaSpeed['NC'])
+        Rule13 = ctrl.Rule(Error['Z'] & DeltaError['Z'], DeltaSpeed['NC'])
+        Rule14 = ctrl.Rule(Error['Z'] & DeltaError['PS'], DeltaSpeed['IS'])
+        Rule15 = ctrl.Rule(Error['Z'] & DeltaError['PL'], DeltaSpeed['IL'])
 
-            angle = 90
-            # Draw line between centroids if both are detected
-            if first_detected and second_detected:
-                first_centroid = (first_vertical_start + cX, first_horizontal_start + cY)
-                second_centroid = (second_vertical_start + second_cX, second_horizontal_start + second_cY)
-                cv2.line(image, first_centroid, second_centroid, (255, 255, 0), 2)
+        Rule16 = ctrl.Rule(Error['PS'] & DeltaError['NL'], DeltaSpeed['NC'])
+        Rule17 = ctrl.Rule(Error['PS'] & DeltaError['NS'], DeltaSpeed['NC'])
+        Rule18 = ctrl.Rule(Error['PS'] & DeltaError['Z'], DeltaSpeed['IS'])
+        Rule19 = ctrl.Rule(Error['PS'] & DeltaError['PS'], DeltaSpeed['IL'])
+        Rule20 = ctrl.Rule(Error['PS'] & DeltaError['PL'], DeltaSpeed['IL'])
 
-                # Calculate the angle between the line and the vertical
-                delta_x = second_centroid[0] - first_centroid[0]
-                delta_y = second_centroid[1] - first_centroid[1]
-                angle = math.degrees(math.atan2(delta_y, delta_x))
+        Rule21 = ctrl.Rule(Error['PL'] & DeltaError['NL'], DeltaSpeed['NC'])
+        Rule22 = ctrl.Rule(Error['PL'] & DeltaError['NS'], DeltaSpeed['IS'])
+        Rule23 = ctrl.Rule(Error['PL'] & DeltaError['Z'], DeltaSpeed['IS'])
+        Rule24 = ctrl.Rule(Error['PL'] & DeltaError['PS'], DeltaSpeed['IL'])
+        Rule25 = ctrl.Rule(Error['PL'] & DeltaError['PL'], DeltaSpeed['IL'])
 
-                # Adjust angle to be relative to the vertical line
-                if angle < -90:
-                    angle += 90
-                elif angle > -90:
-                    angle -= -90
-                angle = abs(angle)
-                # Display the angle on the image
-                angle_text = f"Angle: {angle:.2f} degrees"
-                #cv2.putText(image, angle_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        DeltaSpeedControl = ctrl.ControlSystem([
+            Rule1, Rule2, Rule3, Rule4, Rule5,
+            Rule6, Rule7, Rule8, Rule9, Rule10,
+            Rule11, Rule12, Rule13, Rule14, Rule15,
+            Rule16, Rule17, Rule18, Rule19, Rule20,
+            Rule21, Rule22, Rule23, Rule24, Rule25
+        ])
+        self.DeltaSpeedSim = ctrl.ControlSystemSimulation(DeltaSpeedControl)
 
-            # Adjust the robot's steering based on the error
-            if angle < 15 and angle > -15:
-                angle = 0
-            else:
-                angle = angle
-            self.adjust_robot_steering(error, angle)
+    def InitLearning(self):
+        #self.BaseSpeedModel = joblib.load('BaseSpeedModel.pkl')
+        #self.DeltaSpeedModel = joblib.load('DeltaSpeedModel.pkl')
 
-        # Replace the ROI in the original image
-        #image[first_horizontal_start:first_horizontal_end, first_vertical_start:first_vertical_end] = first_roi
+        self.BaseSpeedDecisionTree = joblib.load('model/BaseSpeedDecisionTree.joblib')
+        self.BaseSpeedGradientBoosting = joblib.load('model/BaseSpeedGradientBoosting.joblib')
+        self.BaseSpeedLinierRegression = joblib.load('model/BaseSpeedLinearRegression.joblib')
+        self.BaseSpeedNeuralNetworks = joblib.load('model/BaseSpeedNeuralNetwork.joblib')
+        self.BaseSpeedRandomForests = joblib.load('model/BaseSpeedRandomForest.joblib')
+        self.BaseSpeedSupportVector = joblib.load('model/BaseSpeedSupportVectorMachine.joblib')
+        
+        self.DeltaSpeedDecisionTree = joblib.load('model/DeltaSpeedDecisionTree.joblib')
+        self.DeltaSpeedGradientBoosting = joblib.load('model/DeltaSpeedGradientBoosting.joblib')
+        self.DeltaSpeedLinierRegression = joblib.load('model/DeltaSpeedLinearRegression.joblib')
+        self.DeltaSpeedNeuralNetworks = joblib.load('model/DeltaSpeedNeuralNetwork.joblib')
+        self.DeltaSpeedRandomForests = joblib.load('model/DeltaSpeedRandomForest.joblib')
+        self.DeltaSpeedSupportVector = joblib.load('model/DeltaSpeedSupportVectorMachine.joblib')
 
-        # Display the image
-        resized_image = cv2.resize(image, (320, 240), interpolation=cv2.INTER_LINEAR)
-        cv2.imshow("Camera Image from e-puck", resized_image)
+    def InitCSV(self):
+        self.FileName = 'output.csv'
+        if os.path.exists(self.FileName):
+            os.remove(self.FileName)
+        else:
+            print("The file does not exist")
+        
+        with open(self.FileName, 'w', newline='') as csvfile:
+            log_writer = csv.writer(csvfile)
+            log_writer.writerow(['Time', 
+                                 'SetPointAngle', 'SensorAngleRow', 'SensorAngleWidth', 'Angle', 'IntegralAngle', 'DeltaAngle', 'BaseSpeed', 
+                                 'SetPointError', 'SensorErrorRow', 'SensorErrorWidth', 'Error', 'IntegralError', 'DeltaError', 'DeltaSpeed', 
+                                 'LeftSpeed', 'RightSpeed', 
+                                 'X', 'Y', 'Z', 
+                                 'Roll', 'Pitch', 'Yaw'])
+
+    def InitRecording(self):
+        self.VideoFileName = 'output.avi'
+        self.VideoOut = cv2.VideoWriter(self.VideoFileName,  cv2.VideoWriter_fourcc(*'MJPG'), 30, (self.CameraWidth, self.CameraHeight)) 
+
+    def ReadCamera(self):
+        CameraImage = self.Camera.getImage()
+        CameraImage = np.frombuffer(CameraImage, np.uint8).reshape((self.CameraHeight, self.CameraWidth, 4))
+        CameraImage = cv2.cvtColor(CameraImage, cv2.COLOR_BGRA2BGR)
+        return CameraImage
+
+    def GetReference(self, CameraImage, SensorConfig, drawDot=False, drawBox=False):
+        SensorRow = SensorConfig[1]
+        SensorWidth = SensorConfig[2] 
+        VerticalStart = int(self.CameraWidth * ((1-SensorWidth)/2))
+        VerticalEnd = int(self.CameraWidth - self.CameraWidth * ((1-SensorWidth)/2))
+        HorizontalStart = self.RowHeight * SensorRow
+        HorizontalEnd = HorizontalStart + self.RowHeight
+        
+        LeftTopPoint = (VerticalStart, HorizontalStart)
+        RightBottomPoint = (VerticalEnd, HorizontalEnd)
+            
+        Roi = CameraImage[int(HorizontalStart):int(HorizontalEnd), int(VerticalStart):int(VerticalEnd)]
+        RoiGray = cv2.cvtColor(Roi, cv2.COLOR_BGR2GRAY)
+        _, RoiThreshold = cv2.threshold(RoiGray, 50, 255, cv2.THRESH_BINARY_INV)
+        
+        RoiMoments = cv2.moments(RoiThreshold)
+        RoiDetected = False
+        if RoiMoments['m00'] != 0:
+            RoiCx = int(RoiMoments['m10'] / RoiMoments['m00'])
+            RoiCy = int(RoiMoments['m01'] / RoiMoments['m00'])
+            RoiDetected = True
+            if drawDot:
+                cv2.circle(Roi, (RoiCx, RoiCy), 3, (0, 0, 255), -1)
+            if drawBox:
+                cv2.rectangle(CameraImage, LeftTopPoint, RightBottomPoint, (255, 0, 0), 2)
+        else:
+            RoiCx = 0
+            RoiCy = 0
+        ReferenceValue = [RoiDetected, RoiCx, RoiCy]
+        return CameraImage, ReferenceValue
+
+    def GetError(self, CameraImage, ReferenceValue, drawLine=False):
+        RoiDetectedError = ReferenceValue[0]
+        RoiCxError = ReferenceValue[1]
+        Error = self.PreviousError
+        if RoiDetectedError:
+            Error = RoiCxError - self.SensorError[0]
+        if drawLine:
+            cv2.line(CameraImage, (self.CameraWidth // 2, 0), (self.CameraWidth // 2, self.CameraHeight), (0, 0, 255), 1)
+        return Error
+
+    def GetAngle(self, CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=False, drawLine=False):
+        RoiDetectedError = ReferenceValueError[0]
+        RoiCxError = ReferenceValueError[1]
+        RoiCyError = ReferenceValueError[2]
+        
+        RoiDetectedAngle = ReferenceValueAngle[0]
+        RoiCxAngle = ReferenceValueAngle[1]
+        RoiCyAngle = ReferenceValueAngle[2]
+        
+        Angle = 75   
+        if RoiDetectedError and RoiDetectedAngle:
+            FirstPointCx = int(RoiCxError - self.SensorError[0] + (self.CameraWidth / 2))
+            FirstPointCy = int(self.RowHeight * self.SensorAngle[1] + RoiCyAngle)
+            
+            SecondPointCx = int(RoiCxError - self.SensorError[0] + (self.CameraWidth / 2))
+            SecondPointCy = int(self.RowHeight * self.SensorError[1] + RoiCyError)
+            
+            ThirdPointCx = int((RoiCxAngle - (self.CameraWidth * self.SensorError[2]) // 2) + (self.CameraWidth / 2))
+            ThirdPointCy = int(self.RowHeight * self.SensorAngle[1] + RoiCyAngle)
+            
+            PointA = np.array([FirstPointCx, FirstPointCy])
+            PointB = np.array([SecondPointCx, SecondPointCy])
+            PointC = np.array([ThirdPointCx, ThirdPointCy])
+            
+            PointBA = PointA - PointB
+            PointBC = PointC - PointB
+        
+            CosineAngle = np.dot(PointBA, PointBC) / (np.linalg.norm(PointBA) * np.linalg.norm(PointBC))
+            AngleRadian = np.arccos(CosineAngle)
+            Angle = np.degrees(AngleRadian)
+        
+            if drawDot:
+                cv2.circle(CameraImage, PointA, 3, (0, 0, 255), -1)
+                cv2.circle(CameraImage, PointB, 3, (0, 0, 255), -1)
+                cv2.circle(CameraImage, PointC, 3, (0, 0, 255), -1)
+            if drawLine:
+                cv2.line(CameraImage, PointA, PointB, (0, 255, 0), 2)
+                cv2.line(CameraImage, PointB, PointC, (0, 255, 0), 2)
+        return Angle
+
+    def ShowCamera(self, CameraImage, CameraSaved=False):
+        ImageResize = cv2.resize(CameraImage, (320, 240), interpolation=cv2.INTER_LINEAR)
+        cv2.imshow("Camera Image from e-puck", ImageResize)
+        if CameraSaved:
+            self.VideoOut.write(ImageResize)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.cleanup()
 
-    def adjust_robot_steering(self, error, error_speed):
-        # Use PID control to calculate the steering adjustment
-        steering_adjustment = self.pid_control(error)
-        
-        # Base speed for the motors
-        base_speed = self.pid_control_speed(error_speed)
+    def CalculateBaseSpeed(self, Angle, MaxSpeed, Control='PID'):
+        DeltaAngle = Angle - self.PreviousAngle
+        self.IntegralAngle += Angle
+        BaseSpeedData = pd.DataFrame({
+                'Angle': [Angle],
+                'DeltaAngle': DeltaAngle
+            })
+        if Control == 'PID':
+            BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
+        elif Control == 'DecisionTree':
+            BaseSpeed = self.BaseSpeedDecisionTree.predict(BaseSpeedData)[0]
+        elif Control == 'GradientBoosting':
+            BaseSpeed = self.BaseSpeedGradientBoosting.predict(BaseSpeedData)[0]
+        elif Control == 'LinierRegression':
+            BaseSpeed = self.BaseSpeedLinierRegression.predict(BaseSpeedData)[0]
+        elif Control == 'NeuralNetworks':
+            BaseSpeed = self.BaseSpeedNeuralNetworks.predict(BaseSpeedData)[0]
+        elif Control == 'RandomForests':
+            BaseSpeed = self.BaseSpeedRandomForests.predict(BaseSpeedData)[0]
+        elif Control == 'SupportVector':
+            BaseSpeed = self.BaseSpeedSupportVector.predict(BaseSpeedData)[0]
+        self.PreviousAngle = Angle
+        AngleValue = [Angle, self.IntegralAngle, DeltaAngle]
+        return AngleValue, BaseSpeed, Control
 
-        if base_speed < 2.75 and base_speed >= 0:
-            base_speed = 2.75
-        elif base_speed > -2.75 and base_speed < 0:
-            base_speed = -2.75
-        else:
-            base_speed = base_speed
-
-        # Adjust the speed of the motors based on the steering adjustment
-        left_speed = base_speed + steering_adjustment
-        right_speed = base_speed - steering_adjustment
-
-        # Cap the speeds to the max velocity
-        left_speed = max(min(left_speed, self.max_velocity), -self.max_velocity)
-        right_speed = max(min(right_speed, self.max_velocity), -self.max_velocity)
-
-        # Set the motor speeds
-        self.left_motor.setVelocity(left_speed)
-        self.right_motor.setVelocity(right_speed)
-
-        # Print the steering adjustment and motor speeds with two decimal places, aligning positive and negative values
-        #print(f"Base Speed: {base_speed:+.2f}, Steering: {steering_adjustment:+.2f}, Left Speed: {left_speed:+.2f}, Right Speed: {right_speed:+.2f}")
-
-    def pid_control(self, error):
-        # Calculate integral and derivative terms
-        self.integral += error
-        derivative = error - self.previous_error
-
-        # PID control equation
-        output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
-        
-        # Update previous error
-        self.previous_error = error
-
-        return output
+    def CalculateDeltaSpeed(self, Error, DeltaSpeed, Control='PID'):
+        DeltaError = Error - self.PreviousError
+        self.IntegralError += Error
+        DeltaSpeedData = pd.DataFrame({
+                'Error': [Error],
+                'IntegralError': self.IntegralError,
+                'DeltaError': [DeltaError]
+            })
+        if Control == 'PID':
+            DeltaSpeed = (self.KpDeltaSpeed * Error) + (self.KiDeltaSpeed * self.IntegralError) + (self.KdDeltaSpeed * DeltaError)
+        elif Control == "Fuzzy":
+            Error = max(min(Error, 320), -320)
+            DeltaError = max(min(DeltaError, 320), -320)
+            self.DeltaSpeedSim.input['Error'] = Error
+            self.DeltaSpeedSim.input['DeltaError'] = DeltaError
+            self.DeltaSpeedSim.compute() 
+        elif Control == 'DecisionTree': 
+            DeltaSpeed = self.DeltaSpeedDecisionTree.predict(DeltaSpeedData)[0]
+        elif Control == 'GradientBoosting':
+            DeltaSpeed = self.DeltaSpeedGradientBoosting.predict(DeltaSpeedData)[0]
+        elif Control == 'LinierRegression':
+            DeltaSpeed = self.DeltaSpeedLinierRegression.predict(DeltaSpeedData)[0]
+        elif Control == 'NeuralNetworks':
+            DeltaSpeed = self.DeltaSpeedNeuralNetworks.predict(DeltaSpeedData)[0]
+        elif Control == 'RandomForests':
+            DeltaSpeed = self.DeltaSpeedRandomForests.predict(DeltaSpeedData)[0]
+        elif Control == 'SupportVector':
+            DeltaSpeed = self.DeltaSpeedSupportVector.predict(DeltaSpeedData)[0]
+        self.PreviousError = Error
+        ErrorValue = [Error, self.IntegralError, DeltaError]
+        return ErrorValue, DeltaSpeed, Control
+  
+    def MotorAction(self, BaseSpeed, DeltaSpeed):
+        LeftSpeed = max(min(BaseSpeed + DeltaSpeed, self.MaxVelocity), -self.MaxVelocity)
+        RightSpeed = max(min(BaseSpeed - DeltaSpeed, self.MaxVelocity), -self.MaxVelocity)
+        self.LeftMotor.setVelocity(LeftSpeed)
+        self.RightMotor.setVelocity(RightSpeed)
+        return LeftSpeed, RightSpeed
     
-    def pid_control_speed(self, error_speed):
-        derivative = error_speed - self.previous_error_speed
-
-        base_speed = 6.0
-        # PID control equation
-        output = base_speed - (self.kp_speed * error_speed) - (self.kd_speed * derivative)
-            
-        # Update previous error
-        self.previous_error_speed = error_speed
-
-        return output
-
     def cleanup(self):
+        self.VideoOut.release()
         cv2.destroyAllWindows()
-        self.robot.simulationQuit(0)  # Optionally add this to quit the simulation
+        self.robot.simulationQuit(0)    
+    
+    def ReadGPS(self):
+        Position = self.GPS.getValues()
+        return Position
+    
+    def ReadIMU(self):    
+        Orientation = self.IMU.getValues()
+        return Orientation
+        
+    def LogData(self, FileName, Time, SensorAngle, AngleValue, BaseSpeed, SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation):
+        with open(FileName, 'a', newline='') as csvfile:
+            log_writer = csv.writer(csvfile)
+            SetPointAngle = SensorAngle[0]
+            SensorAngleRow = SensorAngle[1]
+            SensorAngleWidth = SensorAngle[2]
+            Angle = AngleValue[0]
+            IntegralAngle = AngleValue[1]
+            DeltaAngle = AngleValue[2]
+            SetPointError = SensorError[0]
+            SensorErrorRow = SensorError[1]
+            SensorErrorWidth = SensorError[2]
+            Error = ErrorValue[0]
+            IntegralError = ErrorValue[1]
+            DeltaError = ErrorValue[2]
+            X = Position[0]
+            Y = Position[1]
+            Z = Position[2]
+            Roll = Orientation[0]
+            Pitch = Orientation[1]
+            Yaw = Orientation[2]
+            log_writer.writerow([Time, 
+                                SetPointAngle, SensorAngleRow, SensorAngleWidth, Angle, IntegralAngle, DeltaAngle, BaseSpeed, 
+                                SetPointError, SensorErrorRow, SensorErrorWidth, Error, IntegralError, DeltaError, DeltaSpeed, 
+                                LeftSpeed, RightSpeed, 
+                                X, Y, Z, Roll, Pitch, Yaw])
+
+    def PrintData(self, Time, SensorAngle, AngleValue, BaseSpeed, SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation):
+        SetPointAngle = SensorAngle[0]
+        SensorAngleRow = SensorAngle[1]
+        SensorAngleWidth = SensorAngle[2]
+        Angle = AngleValue[0]
+        IntegralAngle = AngleValue[1]
+        DeltaAngle = AngleValue[2]
+        SetPointError = SensorError[0]
+        SensorErrorRow = SensorError[1]
+        SensorErrorWidth = SensorError[2]
+        Error = ErrorValue[0]
+        IntegralError = ErrorValue[1]
+        DeltaError = ErrorValue[2]
+        X = Position[0]
+        Y = Position[1]
+        Z = Position[2]
+        Roll = Orientation[0]
+        Pitch = Orientation[1]
+        Yaw = Orientation[2]
+        print(f"Angle: {Angle:+06.2f}, DeltaAngle: {DeltaAngle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
+    
+    def Finish(self, Position):
+        if self.StartPosition is None:
+            self.StartPosition = Position
+        
+        DistanceToStart = ((Position[0] - self.StartPosition[0]) ** 2 +
+                           (Position[1] - self.StartPosition[1]) ** 2 +
+                           (Position[2] - self.StartPosition[2]) ** 2) ** 0.5
+        
+        if DistanceToStart > 0.01:
+            self.MovingStatus = True
+        
+        if self.MovingStatus and DistanceToStart < 0.01:
+            return True
+        else:
+            return False              
+            
+    def run(self, BaseControl='PID', DeltaControl='PID', Print=False, CameraSaved=False):
+        while self.Robot.step(self.TimeStep) != -1:
+            Time = self.Robot.getTime()
+            
+            Position = self.ReadGPS()
+            Orientation = self.ReadIMU()
+            CameraImage = self.ReadCamera()
+            
+            FinishStatus = self.Finish(Position)
+
+            CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
+            CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+
+            Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
+            Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
+            
+            AngleValue, BaseSpeed, Control = self.CalculateBaseSpeed(Angle, 6.28, BaseControl) 
+            ErrorValue, DeltaSpeed, Control = self.CalculateDeltaSpeed(Error, DeltaControl)            
+            
+            #LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
+            
+            if FinishStatus:
+                LeftSpeed, RightSpeed = self.MotorAction(0, 0)
+                break
+            else:
+                LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
+            
+            if Print:
+                self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            if self.LogStatus:
+                self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            if self.CameraStatus:
+                self.ShowCamera(CameraImage, CameraSaved=False)
+
+    def MeasurePerfomance(self):
+        BaseControl = 'NeuralNetworks' #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
+        DeltaControl = 'NeuralNetworks' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+        Print = False
+        CameraSaved = False
+        
+        def RunMethod():
+            self.run(BaseControl, DeltaControl, Print, CameraSaved)
+
+        StartTime = time.time()
+        SimulationStartTime = self.Robot.getTime()
+        MemoryUsage = memory_usage((RunMethod,))
+        CPUBeforeLoad = psutil.cpu_percent(interval=1)
+        RunMethod()
+        CPUAfterLoad = psutil.cpu_percent(interval=1)
+        EndTime = time.time()
+        SimulationEndTime = self.Robot.getTime()
+        
+        ExecutionTime = EndTime - StartTime
+        ExecutionSimulationTime = SimulationEndTime - SimulationStartTime
+        MemoryUsageDiff = max(MemoryUsage) - min(MemoryUsage)
+        CPULoad = (CPUBeforeLoad + CPUAfterLoad) / 2
+        
+        return BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad
 
 if __name__ == "__main__":
-    epuck_robot = EPuckRobot()
-    epuck_robot.run()
+    LineFollower = LineFollower(Log=False, Camera=False)
+    #LineFollower.run(BaseControl='PID', DeltaControl='PID', Print=True, CameraSaved=False)
+    BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
+    print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime:.3f} seconds, ExecutionSimulationTime: {ExecutionSimulationTime:.3f} seconds, Memory: {MemoryUsageDiff:.3f} MiB, CPU Load: {CPULoad:.3f}%")

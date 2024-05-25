@@ -9,7 +9,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
-  position 0.2593210993173557 0.4108040937286155 0.4223005636054177
+  position -0.0856185989425855 0.07987049030984156 2.9684306766403723
   follow "e-puck"
   followType "None"
 }
@@ -1607,10 +1607,19 @@ DEF ROBOT Robot {
     ]
   }
   controller "robot_controller"
+  supervisor TRUE
   cpuConsumption 1.11
   remoteControl ""
 }
-DEF supervisor Robot {
+DEF SUPERVISOR Robot {
+  children [
+    Receiver {
+      name "receiver_supervisor"
+    }
+    Emitter {
+      name "emitter_supervisor"
+    }
+  ]
   controller "supervisor_controller"
   supervisor TRUE
 }
