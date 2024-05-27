@@ -32,7 +32,7 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation 0.222948 0.402 -6.3964e-05
+  translation 0.222948 0.423 -6.3964e-05
   rotation -6.39768e-10 -2.42653e-09 1 3.14159
   children [
     DEF EPUCK_GPS GPS {

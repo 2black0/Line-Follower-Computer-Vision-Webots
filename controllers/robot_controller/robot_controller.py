@@ -438,9 +438,9 @@ class LineFollower:
                 self.ShowCamera(CameraImage, CameraSaved=False)
 
 if __name__ == "__main__":
-    LineFollower = LineFollower(Log=False, Camera=False, Learning=False)
-    BaseControl = 'DecisionTree' #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
-    DeltaControl = 'PID' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+    LineFollower = LineFollower(Log=True, Camera=False, Learning=False)
+    BaseControl = 'PID' #PID DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
+    DeltaControl = 'Fuzzy' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
     LineFollower.run(BaseControl=BaseControl, DeltaControl=DeltaControl, Print=False, CameraSaved=False)
     #BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
     #print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime:.3f} seconds, ExecutionSimulationTime: {ExecutionSimulationTime:.3f} seconds, Memory: {MemoryUsageDiff:.3f} MiB, CPU Load: {CPULoad:.3f}%")
