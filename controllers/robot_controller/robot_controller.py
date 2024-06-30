@@ -277,38 +277,37 @@ class LineFollower:
             Orientation = self.ReadIMU()
             CameraImage = self.ReadCamera()
             
-            #SensorErrorRow = 7
-            #SensorErrorWidth = 1
-            #SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
-            #self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
+            SensorErrorRow = 7
+            SensorErrorWidth = 1
+            SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
+            self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
             
-            #CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
-            #CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+            CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
+            CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
             
             #ReferenceValue = [RoiDetected, RoiCx, RoiCy]
-            ReferenceValue = []
-            
-            for i in range(self.RowTotal):
-                SensorConfig = [(self.CameraWidth * 1) // 2, i, 1]
-                CameraImage, ReferenceValueResult = self.GetReference(CameraImage, SensorConfig, drawDot=True, drawBox=True)
-                ReferenceValue.append(ReferenceValueResult)
+            #ReferenceValue = []
+            #for i in range(self.RowTotal):
+            #    SensorConfig = [(self.CameraWidth * 1) // 2, i, 1]
+            #    CameraImage, ReferenceValueResult = self.GetReference(CameraImage, SensorConfig, drawDot=True, drawBox=True)
+            #    ReferenceValue.append(ReferenceValueResult)
 
-            #Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
-            #Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
+            Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
+            Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            #AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28) 
-            #ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error)            
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28) 
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error)            
             
-            #LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
-            LeftSpeed, RightSpeed = 0, 0
+            LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
+            #LeftSpeed, RightSpeed = 0, 0
             
-            #if self.Print:
-            #    self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            if self.Print:
+                self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             #if self.LogStatus:
             #    self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             if self.CameraStatus:
                 self.ShowCamera(CameraImage, CameraSaved=self.CameraSaved)
 
 if __name__ == "__main__":
-    LineFollower = LineFollower(Log=False, Print=False, Camera=True, CameraSaved=False)
+    LineFollower = LineFollower(Log=False, Print=True, Camera=True, CameraSaved=False)
     LineFollower.run()
