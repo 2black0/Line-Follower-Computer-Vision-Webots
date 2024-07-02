@@ -41,7 +41,7 @@ class LineFollower:
         SetPointAngle = 0
         self.SensorAngle = [SetPointAngle, SensorAngleRow, SensorAngleWidth] # SetPoint, Row, Width
         
-        SensorErrorRow = 7
+        SensorErrorRow = 9
         SensorErrorWidth = 1
         SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
         self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
@@ -64,9 +64,9 @@ class LineFollower:
         self.IntegralAngle = 0
         self.PreviousAngle = 0
         
-        self.KpDeltaSpeed = 0.05
-        self.KiDeltaSpeed = 0.005
-        self.KdDeltaSpeed = 0.0045
+        self.KpDeltaSpeed = 0.075
+        self.KiDeltaSpeed = 0.0075
+        self.KdDeltaSpeed = 0.009
         self.IntegralError = 0
         self.PreviousError = 0
 
@@ -277,7 +277,7 @@ class LineFollower:
             Orientation = self.ReadIMU()
             CameraImage = self.ReadCamera()
             
-            SensorErrorRow = 7
+            SensorErrorRow = 9
             SensorErrorWidth = 1
             SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
             self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
@@ -292,10 +292,12 @@ class LineFollower:
             #    CameraImage, ReferenceValueResult = self.GetReference(CameraImage, SensorConfig, drawDot=True, drawBox=True)
             #    ReferenceValue.append(ReferenceValueResult)
 
+            
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28) 
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28)
+            BaseSpeed = 5
             ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error)            
             
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
@@ -303,11 +305,11 @@ class LineFollower:
             
             if self.Print:
                 self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
-            #if self.LogStatus:
-            #    self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
+            if self.LogStatus:
+                self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             if self.CameraStatus:
                 self.ShowCamera(CameraImage, CameraSaved=self.CameraSaved)
 
 if __name__ == "__main__":
-    LineFollower = LineFollower(Log=False, Print=True, Camera=True, CameraSaved=False)
+    LineFollower = LineFollower(Log=True, Print=True, Camera=False, CameraSaved=False)
     LineFollower.run()
