@@ -96,6 +96,48 @@ class LineFollower:
         CameraImage = cv2.cvtColor(CameraImage, cv2.COLOR_BGRA2BGR)
         return CameraImage
 
+    def GetReference2(self, CameraImage, SensorConfig, drawDot=False, drawBox=False):
+        SensorRow = SensorConfig[1]
+        SensorWidth = SensorConfig[2] 
+        VerticalStart = int(self.CameraWidth * ((1-SensorWidth)/2))
+        VerticalEnd = int(self.CameraWidth - self.CameraWidth * ((1-SensorWidth)/2))
+        HorizontalStart = self.RowHeight * SensorRow
+        HorizontalEnd = HorizontalStart + self.RowHeight
+        
+        LeftTopPoint = (VerticalStart, HorizontalStart)
+        RightBottomPoint = (VerticalEnd, HorizontalEnd)
+            
+        # Step 1: Extract ROI
+        Roi = CameraImage[int(HorizontalStart):int(HorizontalEnd), int(VerticalStart):int(VerticalEnd)]
+        RoiUpdate = Roi
+        
+        # Step 2: Convert to grayscale
+        RoiGray = cv2.cvtColor(Roi, cv2.COLOR_BGR2GRAY)
+
+        # Step 3: Apply thresholding
+        _, RoiThreshold = cv2.threshold(RoiGray, 50, 255, cv2.THRESH_BINARY_INV)
+
+        # Step 4: Calculate moments
+        RoiMoments = cv2.moments(RoiThreshold)
+        RoiDetected = False
+        if RoiMoments['m00'] != 0:
+            RoiCx = int(RoiMoments['m10'] / RoiMoments['m00'])
+            RoiCy = int(RoiMoments['m01'] / RoiMoments['m00'])
+            RoiDetected = True
+            if drawDot:
+                cv2.circle(Roi, (RoiCx, RoiCy), 3, (0, 0, 255), -1)
+            if drawBox:
+                cv2.rectangle(CameraImage, LeftTopPoint, RightBottomPoint, (255, 0, 0), 2)
+        else:
+            RoiCx = 0
+            RoiCy = 0
+
+        ReferenceValue = [RoiDetected, RoiCx, RoiCy]
+
+        # Return intermediate steps along with final result
+        return CameraImage, RoiUpdate, Roi, RoiGray, RoiThreshold, ReferenceValue 
+
+
     def GetReference(self, CameraImage, SensorConfig, drawDot=False, drawBox=False):
         SensorRow = SensorConfig[1]
         SensorWidth = SensorConfig[2] 
@@ -276,6 +318,7 @@ class LineFollower:
             Position = self.ReadGPS()
             Orientation = self.ReadIMU()
             CameraImage = self.ReadCamera()
+            cv2.imshow('Original Image', CameraImage)
             
             SensorErrorRow = 9
             SensorErrorWidth = 1
@@ -284,6 +327,18 @@ class LineFollower:
             
             CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
             CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+            
+            # Get the results
+            #CameraImage, RoiUpdate, Roi, RoiGray, RoiThreshold, ReferenceValueError = self.GetReference2(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+
+            # Display the images
+            #cv2.imshow('Original Image with ROI', CameraImage)
+            #cv2.imshow('ROIUpdate', RoiUpdate)
+            #cv2.imshow('ROI', Roi)
+            #cv2.imshow('ROI Grayscale', RoiGray)
+            #cv2.imshow('ROI Threshold', RoiThreshold)
+            #cv2.waitKey(0)
+            #cv2.destroyAllWindows()
             
             #ReferenceValue = [RoiDetected, RoiCx, RoiCy]
             #ReferenceValue = []
@@ -297,8 +352,11 @@ class LineFollower:
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
             AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28)
-            BaseSpeed = 5
+            #BaseSpeed = 5
             ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error)            
+            
+            #BaseSpeed = 0
+            #DeltaSpeed = 0
             
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
             #LeftSpeed, RightSpeed = 0, 0
@@ -311,5 +369,5 @@ class LineFollower:
                 self.ShowCamera(CameraImage, CameraSaved=self.CameraSaved)
 
 if __name__ == "__main__":
-    LineFollower = LineFollower(Log=True, Print=True, Camera=False, CameraSaved=False)
+    LineFollower = LineFollower(Log=True, Print=True, Camera=True, CameraSaved=False)
     LineFollower.run()
