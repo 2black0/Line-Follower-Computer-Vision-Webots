@@ -187,6 +187,7 @@ class LineFollower:
         self.DeltaSpeedSupportVector = joblib.load('model/DeltaSpeedSupportVectorMachine.joblib')
 
     def InitCSV(self):
+        ## ganti nama file
         self.FileName = 'output.csv'
         if os.path.exists(self.FileName):
             os.remove(self.FileName)
@@ -308,8 +309,10 @@ class LineFollower:
             'Angle': [Angle]
         })
         if Control == 'PID':
+            #print("PID")
             BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
         elif Control == 'Fuzzy':
+            #print("Fuzzy")
             Angle = max(min(Angle, 320), -320)
             self.BaseSpeedSim.input['Angle'] = Angle
             self.BaseSpeedSim.compute()
@@ -445,8 +448,29 @@ class LineFollower:
             return True
         else:
             return False              
+    
+    def detect_yellow(self, image):
+        # Convert image to HSV
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        # Define range for yellow color in HSV
+        lower_yellow = np.array([20, 100, 100])
+        upper_yellow = np.array([30, 255, 255])
+        mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        # Check if any yellow is detected
+        return np.any(mask)
+         
+    def is_within_radius(self, position, stop_position, radius):
+        distance = np.sqrt((position[0] - stop_position[0])**2 + (position[1] - stop_position[1])**2)
+        #print(f"Distance: {distance}, Within Radius: {distance <= radius}")
+        return distance <= radius
             
     def run(self, BaseControl='PID', DeltaControl='PID', Print=False, CameraSaved=False):
+        #stop_position = [-0.013322, 0.179999] #arena2
+        #radius = 0.02 #arena2
+        
+        stop_position = [-0.563322, 0.119999] #arena1
+        radius = 0.04 #arena1
+        
         while self.Robot.step(self.TimeStep) != -1:
             Time = self.Robot.getTime()
             
@@ -463,6 +487,16 @@ class LineFollower:
             AngleValue, BaseSpeed, Control = self.CalculateBaseSpeed(Angle, 6.28, BaseControl) 
             ErrorValue, DeltaSpeed, Control = self.CalculateDeltaSpeed(Error, DeltaControl)            
             
+            #BaseSpeed = 5
+            
+            # Deteksi warna merah
+            yellow_detected = self.detect_yellow(CameraImage)
+            within_stop_radius = self.is_within_radius(Position, stop_position, radius)
+            #print(within_stop_radius)
+            if yellow_detected and within_stop_radius:
+                BaseSpeed = 0
+                DeltaSpeed = 0         
+            
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
             
             if Print:
@@ -475,7 +509,7 @@ class LineFollower:
 if __name__ == "__main__":
     LineFollower = LineFollower(Log=True, Camera=True, Learning=False)
     BaseControl = 'Fuzzy' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
-    DeltaControl = 'PID' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+    DeltaControl = 'Fuzzy' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
     LineFollower.run(BaseControl=BaseControl, DeltaControl=DeltaControl, Print=True, CameraSaved=False)
     #BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
     #print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime:.3f} seconds, ExecutionSimulationTime: {ExecutionSimulationTime:.3f} seconds, Memory: {MemoryUsageDiff:.3f} MiB, CPU Load: {CPULoad:.3f}%")
