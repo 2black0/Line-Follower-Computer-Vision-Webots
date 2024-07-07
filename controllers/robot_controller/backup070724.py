@@ -1,18 +1,13 @@
 import os
 import csv
 import cv2
-import joblib
-#import psutil
-#import time
-import pandas as pd
 import numpy as np
 import skfuzzy as fuzz
 from controller import Robot
 from skfuzzy import control as ctrl
-#from memory_profiler import memory_usage
 
 class LineFollower:
-    def __init__(self, Log=False, Camera=False, Learning=False): 
+    def __init__(self, Log=False, Print=False, Camera=False, CameraSaved=False): 
         self.Robot = Robot()
         self.TimeStep = int(self.Robot.getBasicTimeStep())
         
@@ -20,15 +15,14 @@ class LineFollower:
         self.InitMotor()        
         self.InitPID()
         self.InitFuzzy()
-        self.InitFuzzyBase()
-        if Learning:
-            self.InitLearning()
         self.LogStatus = Log
+        self.Print = Print
         if self.LogStatus:
             self.InitCSV()
         self.CameraStatus = Camera
         if self.CameraStatus:
             self.InitRecording()
+        self.CameraSaved = CameraSaved
 
     def InitSensor(self):
         self.Camera = self.Robot.getDevice('camera')
@@ -73,9 +67,9 @@ class LineFollower:
         self.IntegralAngle = 0
         self.PreviousAngle = 0
         
-        self.KpDeltaSpeed = 0.05
-        self.KiDeltaSpeed = 0.005
-        self.KdDeltaSpeed = 0.0045
+        self.KpDeltaSpeed = 0.038
+        self.KiDeltaSpeed = 0.0014
+        self.KdDeltaSpeed = 0.016
         self.IntegralError = 0
         self.PreviousError = 0
 
@@ -141,51 +135,6 @@ class LineFollower:
         ])
         self.DeltaSpeedSim = ctrl.ControlSystemSimulation(DeltaSpeedControl)
 
-    def InitFuzzyBase(self):
-        # Mendefinisikan variabel input dan output
-        Angle = ctrl.Antecedent(np.arange(-90, 90.1, 0.1), 'Angle')
-        BaseSpeed = ctrl.Consequent(np.arange(-8, 8.01, 0.01), 'BaseSpeed')
-
-        # Mendefinisikan fungsi keanggotaan untuk Angle
-        Angle['NN'] = fuzz.trimf(Angle.universe, [-90, -90, -45])
-        Angle['N'] = fuzz.trimf(Angle.universe, [-90, -45, 0])
-        Angle['Z'] = fuzz.trimf(Angle.universe, [-45, 0, 45])
-        Angle['P'] = fuzz.trimf(Angle.universe, [0, 45, 90])
-        Angle['PP'] = fuzz.trimf(Angle.universe, [45, 90, 90])
-
-        # Mendefinisikan fungsi keanggotaan untuk BaseSpeed
-        BaseSpeed['VL'] = fuzz.trimf(BaseSpeed.universe, [-6, -6, -3])
-        BaseSpeed['L'] = fuzz.trimf(BaseSpeed.universe, [-6, -3, 0])
-        BaseSpeed['M'] = fuzz.trimf(BaseSpeed.universe, [-3, 0, 3])
-        BaseSpeed['H'] = fuzz.trimf(BaseSpeed.universe, [0, 3, 6])
-        BaseSpeed['VH'] = fuzz.trimf(BaseSpeed.universe, [3, 6, 6])
-
-        # Mendefinisikan aturan fuzzy
-        Rule1 = ctrl.Rule(Angle['NN'], BaseSpeed['VL'])
-        Rule2 = ctrl.Rule(Angle['N'], BaseSpeed['L'])
-        Rule3 = ctrl.Rule(Angle['Z'], BaseSpeed['M'])
-        Rule4 = ctrl.Rule(Angle['P'], BaseSpeed['H'])
-        Rule5 = ctrl.Rule(Angle['PP'], BaseSpeed['VH'])
-
-        # Membuat sistem kontrol fuzzy
-        BaseSpeedControl = ctrl.ControlSystem([Rule1, Rule2, Rule3, Rule4, Rule5])
-        self.BaseSpeedSim = ctrl.ControlSystemSimulation(BaseSpeedControl)
-
-    def InitLearning(self):
-        self.BaseSpeedDecisionTree = joblib.load('model/BaseSpeedDecisionTree.joblib')
-        self.BaseSpeedGradientBoosting = joblib.load('model/BaseSpeedGradientBoosting.joblib')
-        self.BaseSpeedLinierRegression = joblib.load('model/BaseSpeedLinearRegression.joblib')
-        self.BaseSpeedNeuralNetworks = joblib.load('model/BaseSpeedNeuralNetwork.joblib')
-        self.BaseSpeedRandomForests = joblib.load('model/BaseSpeedRandomForest.joblib')
-        self.BaseSpeedSupportVector = joblib.load('model/BaseSpeedSupportVectorMachine.joblib')
-        
-        self.DeltaSpeedDecisionTree = joblib.load('model/DeltaSpeedDecisionTree.joblib')
-        self.DeltaSpeedGradientBoosting = joblib.load('model/DeltaSpeedGradientBoosting.joblib')
-        self.DeltaSpeedLinierRegression = joblib.load('model/DeltaSpeedLinearRegression.joblib')
-        self.DeltaSpeedNeuralNetworks = joblib.load('model/DeltaSpeedNeuralNetwork.joblib')
-        self.DeltaSpeedRandomForests = joblib.load('model/DeltaSpeedRandomForest.joblib')
-        self.DeltaSpeedSupportVector = joblib.load('model/DeltaSpeedSupportVectorMachine.joblib')
-
     def InitCSV(self):
         self.FileName = 'output.csv'
         if os.path.exists(self.FileName):
@@ -212,6 +161,50 @@ class LineFollower:
         CameraImage = cv2.cvtColor(CameraImage, cv2.COLOR_BGRA2BGR)
         return CameraImage
 
+    def GetReference2(self, CameraImage, SensorConfig, drawDot=False, drawBox=False):
+        SensorRow = SensorConfig[1]
+        SensorWidth = SensorConfig[2] 
+        VerticalStart = int(self.CameraWidth * ((1-SensorWidth)/2))
+        VerticalEnd = int(self.CameraWidth - self.CameraWidth * ((1-SensorWidth)/2))
+        HorizontalStart = self.RowHeight * SensorRow
+        HorizontalEnd = HorizontalStart + self.RowHeight
+        
+        LeftTopPoint = (VerticalStart, HorizontalStart)
+        RightBottomPoint = (VerticalEnd, HorizontalEnd)
+            
+        # Step 1: Extract ROI
+        Roi = CameraImage[int(HorizontalStart):int(HorizontalEnd), int(VerticalStart):int(VerticalEnd)]
+        RoiUpdate = Roi
+        
+        # Step 2: Convert to grayscale
+        RoiGray = cv2.cvtColor(Roi, cv2.COLOR_BGR2GRAY)
+
+        # Step 3: Apply thresholding
+        #_, RoiThreshold = cv2.threshold(RoiGray, 40, 255, cv2.THRESH_BINARY_INV)
+        _, RoiThreshold = cv2.threshold(RoiGray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        #print(cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        # Step 4: Calculate moments
+        RoiMoments = cv2.moments(RoiThreshold)
+        RoiDetected = False
+        if RoiMoments['m00'] != 0:
+            RoiCx = int(RoiMoments['m10'] / RoiMoments['m00'])
+            RoiCy = int(RoiMoments['m01'] / RoiMoments['m00'])
+            RoiDetected = True
+            if drawDot:
+                cv2.circle(Roi, (RoiCx, RoiCy), 3, (0, 0, 255), -1)
+            if drawBox:
+                cv2.rectangle(CameraImage, LeftTopPoint, RightBottomPoint, (255, 0, 0), 2)
+        else:
+            RoiCx = 0
+            RoiCy = 0
+
+        ReferenceValue = [RoiDetected, RoiCx, RoiCy]
+
+        # Return intermediate steps along with final result
+        return CameraImage, RoiUpdate, Roi, RoiGray, RoiThreshold, ReferenceValue 
+
+
     def GetReference(self, CameraImage, SensorConfig, drawDot=False, drawBox=False):
         SensorRow = SensorConfig[1]
         SensorWidth = SensorConfig[2] 
@@ -225,7 +218,9 @@ class LineFollower:
             
         Roi = CameraImage[int(HorizontalStart):int(HorizontalEnd), int(VerticalStart):int(VerticalEnd)]
         RoiGray = cv2.cvtColor(Roi, cv2.COLOR_BGR2GRAY)
-        _, RoiThreshold = cv2.threshold(RoiGray, 50, 255, cv2.THRESH_BINARY_INV)
+        #_, RoiThreshold = cv2.threshold(RoiGray, 40, 255, cv2.THRESH_BINARY_INV)
+        _, RoiThreshold = cv2.threshold(RoiGray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        #print(cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         
         RoiMoments = cv2.moments(RoiThreshold)
         RoiDetected = False
@@ -241,7 +236,7 @@ class LineFollower:
             RoiCx = 0
             RoiCy = 0
         ReferenceValue = [RoiDetected, RoiCx, RoiCy]
-        return CameraImage, ReferenceValue
+        return CameraImage, ReferenceValue        
 
     def GetError(self, CameraImage, ReferenceValue, drawLine=False):
         RoiDetectedError = ReferenceValue[0]
@@ -301,66 +296,33 @@ class LineFollower:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             self.cleanup()
 
-    def CalculateBaseSpeed(self, Angle, MaxSpeed, Control='PID'):
+    def CalculateBaseSpeed(self, Angle, MaxSpeed):
         DeltaAngle = Angle - self.PreviousAngle
         self.IntegralAngle += Angle
-        BaseSpeedData = pd.DataFrame({
-            'Angle': [Angle]
-        })
-        if Control == 'PID':
-            BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
-        elif Control == 'Fuzzy':
-            Angle = max(min(Angle, 320), -320)
-            self.BaseSpeedSim.input['Angle'] = Angle
-            self.BaseSpeedSim.compute()
-            BaseSpeed = MaxSpeed - self.BaseSpeedSim.output['BaseSpeed']
-        elif Control == 'DecisionTree':
-            BaseSpeed = self.BaseSpeedDecisionTree.predict(BaseSpeedData)[0]
-        elif Control == 'GradientBoosting':
-            BaseSpeed = self.BaseSpeedGradientBoosting.predict(BaseSpeedData)[0]
-        elif Control == 'LinierRegression':
-            BaseSpeed = self.BaseSpeedLinierRegression.predict(BaseSpeedData)[0]
-        elif Control == 'NeuralNetworks':
-            BaseSpeed = self.BaseSpeedNeuralNetworks.predict(BaseSpeedData)[0]
-        elif Control == 'RandomForests':
-            BaseSpeed = self.BaseSpeedRandomForests.predict(BaseSpeedData)[0]
-        elif Control == 'SupportVector':
-            BaseSpeed = self.BaseSpeedSupportVector.predict(BaseSpeedData)[0]
+        BaseSpeed = MaxSpeed - (self.KpBaseSpeed * Angle) - (self.KdBaseSpeed * DeltaAngle)
         self.PreviousAngle = Angle
         AngleValue = [Angle, self.IntegralAngle, DeltaAngle]
-        return AngleValue, BaseSpeed, Control
+        return AngleValue, BaseSpeed
 
-    def CalculateDeltaSpeed(self, Error, DeltaSpeed, Control='PID'):
+    def CalculateDeltaSpeed(self, Error):
         DeltaError = Error - self.PreviousError
         self.IntegralError += Error
-        DeltaSpeedData = pd.DataFrame({
-                'Error': [Error],
-                'IntegralError': self.IntegralError,
-                'DeltaError': [DeltaError]
-            })
-        if Control == 'PID':
-            DeltaSpeed = (self.KpDeltaSpeed * Error) + (self.KiDeltaSpeed * self.IntegralError) + (self.KdDeltaSpeed * DeltaError)
-        elif Control == "Fuzzy":
-            Error = max(min(Error, 320), -320)
-            DeltaError = max(min(DeltaError, 320), -320)
-            self.DeltaSpeedSim.input['Error'] = Error
-            self.DeltaSpeedSim.input['DeltaError'] = DeltaError
-            self.DeltaSpeedSim.compute() 
-        elif Control == 'DecisionTree': 
-            DeltaSpeed = self.DeltaSpeedDecisionTree.predict(DeltaSpeedData)[0]
-        elif Control == 'GradientBoosting':
-            DeltaSpeed = self.DeltaSpeedGradientBoosting.predict(DeltaSpeedData)[0]
-        elif Control == 'LinierRegression':
-            DeltaSpeed = self.DeltaSpeedLinierRegression.predict(DeltaSpeedData)[0]
-        elif Control == 'NeuralNetworks':
-            DeltaSpeed = self.DeltaSpeedNeuralNetworks.predict(DeltaSpeedData)[0]
-        elif Control == 'RandomForests':
-            DeltaSpeed = self.DeltaSpeedRandomForests.predict(DeltaSpeedData)[0]
-        elif Control == 'SupportVector':
-            DeltaSpeed = self.DeltaSpeedSupportVector.predict(DeltaSpeedData)[0]
+        DeltaSpeed = (self.KpDeltaSpeed * Error) + (self.KiDeltaSpeed * self.IntegralError) + (self.KdDeltaSpeed * DeltaError)  
         self.PreviousError = Error
         ErrorValue = [Error, self.IntegralError, DeltaError]
-        return ErrorValue, DeltaSpeed, Control
+        return ErrorValue, DeltaSpeed
+
+    def CalculateDeltaSpeedFuzzy(self, Error):
+        DeltaError = Error - self.PreviousError
+        self.IntegralError += Error
+        Error = max(min(Error, 320), -320)
+        DeltaError = max(min(DeltaError, 320), -320)
+        self.DeltaSpeedSim.input['Error'] = Error
+        self.DeltaSpeedSim.input['DeltaError'] = DeltaError
+        DeltaSpeed = self.DeltaSpeedSim.compute()
+        self.PreviousError = Error
+        ErrorValue = [Error, self.IntegralError, DeltaError]
+        return ErrorValue, DeltaSpeed
   
     def MotorAction(self, BaseSpeed, DeltaSpeed):
         LeftSpeed = max(min(BaseSpeed + DeltaSpeed, self.MaxVelocity), -self.MaxVelocity)
@@ -428,54 +390,70 @@ class LineFollower:
         Roll = Orientation[0]
         Pitch = Orientation[1]
         Yaw = Orientation[2]
-        print(f"Angle: {Angle:+06.2f}, DeltaAngle: {DeltaAngle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")
-    
-    def Finish(self, Position):
-        if self.StartPosition is None:
-            self.StartPosition = Position
-        
-        DistanceToStart = ((Position[0] - self.StartPosition[0]) ** 2 +
-                           (Position[1] - self.StartPosition[1]) ** 2 +
-                           (Position[2] - self.StartPosition[2]) ** 2) ** 0.5
-        
-        if DistanceToStart > 0.01:
-            self.MovingStatus = True
-        
-        if self.MovingStatus and DistanceToStart < 0.01:
-            return True
-        else:
-            return False              
+        print(f"Angle: {Angle:+06.2f}, DeltaAngle: {DeltaAngle:+06.2f}, BaseSpeed: {BaseSpeed:+06.2f}, Error: {Error:+06.2f}, DeltaError: {DeltaError:+06.2f}, DeltaSpeed: {DeltaSpeed:+06.2f}")        
             
-    def run(self, BaseControl='PID', DeltaControl='PID', Print=False, CameraSaved=False):
+    def run(self):
         while self.Robot.step(self.TimeStep) != -1:
             Time = self.Robot.getTime()
             
             Position = self.ReadGPS()
             Orientation = self.ReadIMU()
             CameraImage = self.ReadCamera()
+            #cv2.imshow('Original Image', CameraImage)
             
-            CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
-            CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+            SensorErrorRow = 9
+            SensorErrorWidth = 1
+            SetPointError = (self.CameraWidth * SensorErrorWidth) // 2
+            self.SensorError = [SetPointError, SensorErrorRow, SensorErrorWidth] # SetPoint, Row, Width
+            
+            #CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=True, drawBox=True)
+            #CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
+            
+            # Get the results
+            #CameraImage2, RoiUpdate, Roi, RoiGray, RoiThreshold, ReferenceValueError = self.GetReference2(CameraImage, self.SensorError, drawDot=False, drawBox=True)
+            #CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=True, drawBox=True)
 
+            CameraImage, ReferenceValueAngle = self.GetReference(CameraImage, self.SensorAngle, drawDot=False, drawBox=True)
+            CameraImage, ReferenceValueError = self.GetReference(CameraImage, self.SensorError, drawDot=False, drawBox=True)
+
+            # Display the images
+            #cv2.imshow('Original Image with ROI', CameraImage2)
+            #cv2.imshow('ROIUpdate', RoiUpdate)
+            #cv2.imshow('ROI', Roi)
+            #cv2.imshow('ROI Grayscale', RoiGray)
+            #cv2.imshow('ROI Threshold', RoiThreshold)
+            #cv2.waitKey(0)
+            #cv2.destroyAllWindows()
+            
+            #ReferenceValue = [RoiDetected, RoiCx, RoiCy]
+            #ReferenceValue = []
+            #for i in range(self.RowTotal):
+            #    SensorConfig = [(self.CameraWidth * 1) // 2, i, 1]
+            #    CameraImage, ReferenceValueResult = self.GetReference(CameraImage, SensorConfig, drawDot=True, drawBox=True)
+            #    ReferenceValue.append(ReferenceValueResult)
+
+            
             Angle = self.GetAngle(CameraImage, ReferenceValueError, ReferenceValueAngle, drawDot=True, drawLine=True)
             Error = self.GetError(CameraImage, ReferenceValueError, drawLine=True)
             
-            AngleValue, BaseSpeed, Control = self.CalculateBaseSpeed(Angle, 6.28, BaseControl) 
-            ErrorValue, DeltaSpeed, Control = self.CalculateDeltaSpeed(Error, DeltaControl)            
+            AngleValue, BaseSpeed = self.CalculateBaseSpeed(Angle, 6.28)
+            #BaseSpeed = 4
+            #ErrorValue, DeltaSpeed = self.CalculateDeltaSpeed(Error)  
+            ErrorValue, DeltaSpeed = self.CalculateDeltaSpeedFuzzy(Error)           
+            
+            #BaseSpeed = 0
+            #DeltaSpeed = 0
             
             LeftSpeed, RightSpeed = self.MotorAction(BaseSpeed, DeltaSpeed)
+            #LeftSpeed, RightSpeed = 0, 0
             
-            if Print:
+            if self.Print:
                 self.PrintData(Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             if self.LogStatus:
                 self.LogData(self.FileName, Time, self.SensorAngle, AngleValue, BaseSpeed, self.SensorError, ErrorValue, DeltaSpeed, LeftSpeed, RightSpeed, Position, Orientation)
             if self.CameraStatus:
-                self.ShowCamera(CameraImage, CameraSaved=False)
+                self.ShowCamera(CameraImage, CameraSaved=self.CameraSaved)
 
 if __name__ == "__main__":
-    LineFollower = LineFollower(Log=True, Camera=True, Learning=False)
-    BaseControl = 'Fuzzy' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
-    DeltaControl = 'PID' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
-    LineFollower.run(BaseControl=BaseControl, DeltaControl=DeltaControl, Print=True, CameraSaved=False)
-    #BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
-    #print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime:.3f} seconds, ExecutionSimulationTime: {ExecutionSimulationTime:.3f} seconds, Memory: {MemoryUsageDiff:.3f} MiB, CPU Load: {CPULoad:.3f}%")
+    LineFollower = LineFollower(Log=True, Print=True, Camera=True, CameraSaved=False)
+    LineFollower.run()

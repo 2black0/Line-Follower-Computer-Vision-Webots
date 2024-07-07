@@ -1,19 +1,13 @@
 #VRML_SIM R2023b utf8
 
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
 
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
-  position 0.024373005397810392 0.028750643352670968 3.110747403392458
+  orientation -0.36162997155596033 0.38641960625157046 0.8484713616715749 1.6686641924306498
+  position -0.14608747774598457 -1.855786848861199 1.8831446945617334
   follow "e-puck"
-}
-TexturedBackground {
-}
-TexturedBackgroundLight {
 }
 RectangleArena {
   rotation 0 0 1 -1.5707953071795862
@@ -30,7 +24,7 @@ RectangleArena {
   }
 }
 DEF ROBOT Robot {
-  translation -0.414993 0.405 -6.39594e-05
+  translation -0.414993 0.400569 -6.39594e-05
   rotation -0.00893917239029121 0.0023568206302023707 0.9999572673837086 -5.307179586466759e-06
   children [
     DEF EPUCK_GPS GPS {
@@ -53,7 +47,7 @@ DEF ROBOT Robot {
         }
       ]
       endPoint DEF EPUCK_LEFT_WHEEL Solid {
-        translation 0 0.025999999999997938 0.02
+        translation 0 0.02599999999999791 0.02
         rotation 0 1 0 0
         children [
           DEF EPUCK_WHEEL Pose {
@@ -206,7 +200,7 @@ DEF ROBOT Robot {
         }
       ]
       endPoint DEF EPUCK_RIGHT_WHEEL Solid {
-        translation 0 -0.02599999999999796 0.02
+        translation 0 -0.025999999999997938 0.02
         rotation 0 1 0 0
         children [
           Pose {
@@ -1623,8 +1617,6 @@ DEF SUPERVISOR Robot {
 }
 PointLight {
   attenuation 0 0 1
-  intensity 0.4
-  location 0 0.1 0.25
-  on FALSE
+  location 0 0 0.4
   radius 400
 }
