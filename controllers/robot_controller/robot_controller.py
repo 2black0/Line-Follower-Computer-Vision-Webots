@@ -508,8 +508,8 @@ class LineFollower:
 
 if __name__ == "__main__":
     LineFollower = LineFollower(Log=True, Camera=True, Learning=False)
-    BaseControl = 'Fuzzy' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
-    DeltaControl = 'Fuzzy' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
+    BaseControl = 'PID' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector 
+    DeltaControl = 'PID' #PID Fuzzy DecisionTree GradientBoosting LinierRegression NeuralNetworks RandomForests SupportVector
     LineFollower.run(BaseControl=BaseControl, DeltaControl=DeltaControl, Print=True, CameraSaved=False)
     #BaseControl, DeltaControl, ExecutionTime, ExecutionSimulationTime, MemoryUsageDiff, CPULoad = LineFollower.MeasurePerfomance()
     #print(f"BaseControl: {BaseControl}, DeltaControl: {DeltaControl}, ExecutionTime: {ExecutionTime:.3f} seconds, ExecutionSimulationTime: {ExecutionSimulationTime:.3f} seconds, Memory: {MemoryUsageDiff:.3f} MiB, CPU Load: {CPULoad:.3f}%")
