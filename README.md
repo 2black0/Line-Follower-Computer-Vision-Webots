@@ -82,8 +82,8 @@ pip install -r Project/controllers/requirements.txt
 1. **Clone the repository**:
 
    ```sh
-   git clone https://github.com/2black0/Line-Follower-Robot-PID-Fuzzy-Machine-Learning-Control.git
-   cd Line-Follower-Robot-PID-Fuzzy-Machine-Learning-Control
+   git clone https://github.com/2black0/Line-Follower-Computer-Vision-Webots.git
+   cd Line-Follower-Computer-Vision-Webots
    ```
 
 2. **Set up the virtual environment** (optional but recommended):
